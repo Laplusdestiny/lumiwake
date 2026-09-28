@@ -2,7 +2,7 @@
 
 キーボード操作で画像をすばやくフォルダへ振り分ける、Windows / Linux 向けの軽量デスクトップアプリ。
 claude.ai のプロジェクト「画像振り分けアプリケーション」で要件定義・UI 検討・命名まで済ませ、実装を Claude Code に引き継いだ。
-**コードはまだ 1 行も書かれていない。** 最初の作業は Tauri プロジェクトの雛形作成から。
+MVP（手動仕分け）は実装済み。実装の経緯・決定事項・残課題は `docs/handoff-notes.md` の「実装フェーズ」を参照。
 
 ## 必読ドキュメント
 
@@ -46,6 +46,33 @@ claude.ai のプロジェクト「画像振り分けアプリケーション」�
 5. 先読み、HEIC/AVIF、設定画面、終了時の削除確認
 6. CI（tauri-action）、署名付き updater、Starlight の説明ページ
 
+## ディレクトリ構成
+
+- `src/` — 画面（素の TypeScript + Vite）。表示とキー入力の受け渡しだけ。Rust 呼び出しは `src/api.ts` に集約
+- `src-tauri/src/` — Rust コア
+  - `scanner.rs` スキャナ / `decoder/` デコーダ・先読みキャッシュ / `fileops/` ファイル操作 ★ / `config/` 設定管理
+  - `commands.rs` 画面から呼ぶ Tauri コマンド、`protocol.rs` 画像を返す `lumi://` プロトコル、`state.rs` 共有状態
+- `src-tauri/tests/fixtures/` — テスト用の極小 HEIC / AVIF（ダミー画像。実在の写真は置かない）
+- `site/` — 説明ページ（Astro Starlight、日英）。依存は別の package.json
+- `.github/workflows/` — `ci.yml`（PR / main）、`release.yml`（Release 公開時）、`pages.yml`（説明ページ）
+
 ## コマンド
 
-（雛形作成後に、ビルド・テスト・lint のコマンドをここへ追記すること）
+```sh
+npm ci                       # フロントの依存
+npm run tauri dev            # 開発起動
+npm run typecheck            # フロントの型チェック
+npm test                     # フロントのテスト（vitest）
+npm run tauri build          # パッケージ作成（Linux で HEIC/AVIF も含めるなら -- --features avif,heic）
+
+cd src-tauri
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test                   # Rust のテスト
+cargo test --features avif,heic   # HEIC/AVIF も（libheif-dev・libdav1d-dev が必要）
+
+cd site && npm ci && npm run build   # 説明ページ
+```
+
+Linux で Tauri をビルドするには `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev` が必要（HEIC/AVIF を有効にするなら `libheif-dev libdav1d-dev` も）。
+リリース手順と updater の署名鍵は `docs/release.md`。
