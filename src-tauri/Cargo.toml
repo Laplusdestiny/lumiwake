@@ -1,0 +1,36 @@
+[package]
+name = "lumiwake"
+version = "0.1.0"
+description = "キーボード操作で画像をすばやくフォルダへ振り分けるデスクトップアプリ"
+authors = ["Laplusdestiny"]
+license = "MIT"
+repository = "https://github.com/laplusdestiny/lumiwake"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+# Tauri のモバイル対応テンプレートに合わせ、バイナリとライブラリを分ける
+name = "lumiwake_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+tauri-plugin-updater = "2"
+
+[profile.release]
+# 配布サイズを抑える
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "unwind"
+strip = true
