@@ -1,4 +1,5 @@
 pub mod config;
+pub mod decoder;
 pub mod fileops;
 pub mod format;
 pub mod scanner;

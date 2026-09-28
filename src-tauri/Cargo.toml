@@ -26,9 +26,24 @@ serde_json = "1"
 thiserror = "2"
 dunce = "1"
 toml = "1"
+# 標準で使う形式だけを有効にし、配布サイズを抑える（AVIF は下の feature で追加）
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
+kamadak-exif = "0.6"
+libheif-rs = { version = "2", optional = true, default-features = false, features = ["v1_17"] }
+
+[features]
+default = []
+# AVIF の表示（C ライブラリ libdav1d が必要）
+avif = ["image/avif-native"]
+# HEIC/HEIF の表示（C ライブラリ libheif が必要）
+heic = ["dep:libheif-rs"]
 
 [target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
 tauri-plugin-updater = "2"
+
+# 開発・テスト時も画像処理の依存クレートは最適化してビルドする（デバッグビルドだと極端に遅い）
+[profile.dev.package."*"]
+opt-level = 2
 
 [profile.release]
 # 配布サイズを抑える
