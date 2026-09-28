@@ -449,7 +449,7 @@ fn io_err(context: &'static str, path: &Path, source: std::io::Error) -> FileOpE
     FileOpError::Io { context, path: path.to_path_buf(), source }
 }
 
-pub(crate) fn file_name(path: &Path) -> String {
+pub fn file_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
