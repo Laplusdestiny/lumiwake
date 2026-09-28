@@ -39,6 +39,11 @@ JPEG / PNG / WebP / GIF / BMP / TIFF / AVIF / HEIC（RAW は対象外）
 - [Tauri](https://tauri.app/) + Rust
 - 画像デコード: `image` クレート、HEIC は `libheif-rs`
 
+## ドキュメント
+
+- [要件定義書](./docs/requirements.md)
+- [UI モック](./docs/ui-mockups/)
+
 ## ライセンス
 
 [MIT License](./LICENSE)

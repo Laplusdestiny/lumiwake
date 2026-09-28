@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>A. サイドバー型</title>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&amp;family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0;background:#16171a}
+a{color:#e8a33d}a:hover{color:#f3bf6b}
+button{font-family:inherit}
+</style>
+<div style="width: 1280px; height: 800px; display: flex; flex-direction: column; background: #16171a; color: #ecebe6; font-family: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Noto Sans JP', sans-serif">
+  <header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 20px; padding: 0 20px; border-bottom: 1px solid #2c2e33">
+    <div style="font-size: 16px; font-weight: 700; letter-spacing: 0.02em">画像振り分け</div>
+    <div style="font-size: 13px; color: #a3a29c">入力フォルダ：~/Pictures/未整理</div>
+    <div style="flex-grow: 1"></div>
+    <div role="group" aria-label="表示モード" style="display: flex; gap: 4px; padding: 4px; background: #1f2125; border-radius: 8px">
+      <button aria-pressed="true" style="height: 32px; padding: 0 12px; background: #34363c; border: 0; border-radius: 6px; color: #ecebe6; font-size: 13px; cursor: pointer">サイドバー</button>
+      <button aria-pressed="false" style="height: 32px; padding: 0 12px; background: transparent; border: 0; border-radius: 6px; color: #a3a29c; font-size: 13px; cursor: pointer">全画面</button>
+      <button aria-pressed="false" style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 12px; background: transparent; border: 0; border-radius: 6px; color: #a3a29c; font-size: 13px; cursor: pointer">一括確認<span style="padding: 1px 5px; border: 1px solid #5a5d65; border-radius: 4px; font-size: 10px; color: #a3a29c">AI</span></button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #a3a29c">
+      <span>128 / 1,024 枚</span>
+      <div style="width: 160px; height: 6px; background: #2c2e33; border-radius: 3px; overflow: hidden">
+        <div style="width: 12.5%; height: 100%; background: #e8a33d"></div>
+      </div>
+    </div>
+    <button aria-label="取り消し" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid #2c2e33; border-radius: 8px; color: #ecebe6; cursor: pointer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 0 10h-3"></path></svg>
+    </button>
+    <button aria-label="設定" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid #2c2e33; border-radius: 8px; color: #ecebe6; cursor: pointer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path><circle cx="15" cy="6" r="2" fill="#16171a"></circle><circle cx="8" cy="12" r="2" fill="#16171a"></circle><circle cx="17" cy="18" r="2" fill="#16171a"></circle></svg>
+    </button>
+  </header>
+  <div style="flex-grow: 1; min-height: 0; display: flex">
+    <main style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px">
+      <div style="display: flex; align-items: baseline; gap: 12px">
+        <div style="font-size: 15px; font-weight: 500">IMG_2041.jpg</div>
+        <div style="font-size: 12px; color: #a3a29c">4032×3024 · 3.2 MB · 2026-08-14 撮影</div>
+      </div>
+      <div style="flex-grow: 1; min-height: 0; background: #24262b; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #a3a29c; font-size: 13px">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6b6d74" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
+        <span>[画像プレビュー]</span>
+      </div>
+      <div style="height: 80px; flex-shrink: 0; display: flex; gap: 8px; align-items: center">
+        
+          
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #1e2024; border: 1px solid #2c2e33; box-sizing: border-box; display: flex; align-items: flex-end; padding: 6px; font-size: 11px; color: #a3a29c">→ 人物</div>
+          
+          
+        
+          
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #1e2024; border: 1px solid #2c2e33; box-sizing: border-box; display: flex; align-items: flex-end; padding: 6px; font-size: 11px; color: #a3a29c">→ 風景</div>
+          
+          
+        
+          
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #1e2024; border: 1px solid #2c2e33; box-sizing: border-box; display: flex; align-items: flex-end; padding: 6px; font-size: 11px; color: #a3a29c">→ スクリーンショット</div>
+          
+          
+        
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #34363c; outline: 2px solid #e8a33d; outline-offset: 2px"></div>
+          
+          
+          
+        
+          
+          
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #2b2d32"></div>
+          
+        
+          
+          
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #2b2d32"></div>
+          
+        
+          
+          
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #2b2d32"></div>
+          
+        
+          
+          
+          
+            <div style="width: 96px; height: 72px; border-radius: 6px; background: #2b2d32"></div>
+          
+        
+      </div>
+      <div style="display: flex; gap: 18px; flex-shrink: 0; font-size: 12px; color: #a3a29c">
+        <span>1〜9 で移動</span>
+        <span>Enter 第1候補で確定</span>
+        <span>Space スキップ</span>
+        <span>← → 前後</span>
+        <span>Ctrl+Z 取り消し</span>
+      </div>
+    </main>
+    <aside style="width: 360px; flex-shrink: 0; background: #1c1e22; border-left: 1px solid #2c2e33; display: flex; flex-direction: column; gap: 12px; padding: 16px; box-sizing: border-box">
+      <div style="font-size: 13px; font-weight: 700">AI の候補</div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        
+          <button style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #24262b; border: 1px solid #e8a33d; border-radius: 8px; color: #ecebe6; text-align: left; cursor: pointer">
+            <div style="display: flex; align-items: center; gap: 10px; width: 100%">
+              <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 3px; border-radius: 6px; background: #2b2d32; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px">1</span>
+              <span style="flex-grow: 1; font-size: 14px; font-weight: 500">風景</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #a3a29c">92%</span>
+            </div>
+            <div style="width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #a3a29c">~/Pictures/整理済み/風景</div>
+            <div style="width: 100%; height: 4px; background: #2c2e33; border-radius: 2px; overflow: hidden">
+              <div style="width: 92%; height: 100%; background: #e8a33d"></div>
+            </div>
+          </button>
+        
+          <button style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #24262b; border: 1px solid #2c2e33; border-radius: 8px; color: #ecebe6; text-align: left; cursor: pointer">
+            <div style="display: flex; align-items: center; gap: 10px; width: 100%">
+              <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 3px; border-radius: 6px; background: #2b2d32; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px">4</span>
+              <span style="flex-grow: 1; font-size: 14px; font-weight: 500">2026</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #a3a29c">71%</span>
+            </div>
+            <div style="width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #a3a29c">~/Pictures/旅行/2026</div>
+            <div style="width: 100%; height: 4px; background: #2c2e33; border-radius: 2px; overflow: hidden">
+              <div style="width: 71%; height: 100%; background: #6b6d74"></div>
+            </div>
+          </button>
+        
+          <button style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #24262b; border: 1px solid #2c2e33; border-radius: 8px; color: #ecebe6; text-align: left; cursor: pointer">
+            <div style="display: flex; align-items: center; gap: 10px; width: 100%">
+              <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 3px; border-radius: 6px; background: #2b2d32; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px">8</span>
+              <span style="flex-grow: 1; font-size: 14px; font-weight: 500">後で見る</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #a3a29c">18%</span>
+            </div>
+            <div style="width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #a3a29c">~/Pictures/後で見る</div>
+            <div style="width: 100%; height: 4px; background: #2c2e33; border-radius: 2px; overflow: hidden">
+              <div style="width: 18%; height: 100%; background: #6b6d74"></div>
+            </div>
+          </button>
+        
+      </div>
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding-top: 10px; border-top: 1px solid #2c2e33">
+        <div style="font-size: 13px; font-weight: 700">フォルダ</div>
+        <div style="font-size: 11px; color: #a3a29c">同名フォルダはパスで区別</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-height: 0; overflow-y: auto">
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">1</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">風景</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Pictures/整理済み/風景</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">214</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">2</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">人物</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Pictures/整理済み/人物</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">87</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">3</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">食べ物</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Pictures/整理済み/食べ物</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">56</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">4</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">2026</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Pictures/旅行/2026</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">143</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">5</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">2026</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Documents/スキャン/2026</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">39</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">6</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">スクリーンショット</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Pictures/スクリーンショット</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">301</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">7</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">ペット</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">/mnt/nas/photos/ペット</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">22</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">8</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">後で見る</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Pictures/後で見る</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">12</span>
+          </button>
+        
+          <button style="display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 0 8px; background: transparent; border: 0; border-radius: 6px; color: #ecebe6; text-align: left; cursor: pointer">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 2px; border-radius: 5px; background: #26282d; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px">9</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="font-size: 13px; line-height: 1.3">削除候補</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; line-height: 1.3; color: #a3a29c">~/Pictures/削除候補</span>
+            </span>
+            <span style="font-size: 12px; color: #a3a29c">48</span>
+          </button>
+        
+      </div>
+    </aside>
+  </div>
+</div>
+
+</body>
+</html>
