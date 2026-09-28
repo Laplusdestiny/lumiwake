@@ -69,10 +69,10 @@ cd src-tauri
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test                   # Rust のテスト
-cargo test --features avif,heic   # HEIC/AVIF も（libheif-dev・libdav1d-dev が必要）
+cargo test --features avif,heic   # HEIC/AVIF も（libheif-dev・libheif-plugin-libde265・libdav1d-dev が必要）
 
 cd site && npm ci && npm run build   # 説明ページ
 ```
 
-Linux で Tauri をビルドするには `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev` が必要（HEIC/AVIF を有効にするなら `libheif-dev libdav1d-dev` も）。
+Linux で Tauri をビルドするには `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev` が必要（HEIC/AVIF を有効にするなら `libheif-dev libheif-plugin-libde265 libdav1d-dev` も。HEIC のデコードには libde265 プラグインが必要）。
 リリース手順と updater の署名鍵は `docs/release.md`。
