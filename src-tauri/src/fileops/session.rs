@@ -1,7 +1,8 @@
 //! 仕分けセッション: 画像の並び・現在位置・操作履歴（Undo）・削除予定を管理する。
 
-use super::fs::Fs;
+use super::fs::{safe_move, unique_path, Fs};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -51,7 +52,10 @@ pub struct Item {
 #[derive(Debug, Clone)]
 pub enum Action {
     /// 振り分け先フォルダへ移動する。`label` は履歴表示用の名前
-    MoveTo { dir: PathBuf, label: String },
+    MoveTo {
+        dir: PathBuf,
+        label: String,
+    },
     Skip,
     Delete,
 }
@@ -137,75 +141,427 @@ pub enum FileOpError {
     },
 }
 
+/// 上書きのために退避した既存ファイル
+#[derive(Debug, Clone)]
+struct Displaced {
+    original: PathBuf,
+    now: PathBuf,
+    in_trash: bool,
+}
+
+/// 操作履歴 1 件。取り消しに必要な情報をすべて持つ
+#[derive(Debug, Clone)]
+struct Entry {
+    item: usize,
+    prev_status: Status,
+    label: String,
+    /// 画像を動かした先（取り消し時にここから元の場所へ戻す）
+    moved_to: Option<PathBuf>,
+    /// 上書きで退避した既存ファイル（取り消し時に元へ戻す）
+    displaced: Option<Displaced>,
+}
+
 pub struct Session {
     fs: Arc<dyn Fs>,
     items: Vec<Item>,
+    /// 現在の画像の番号。常に未処理の画像を指すか、`items.len()`（完了）
     cursor: usize,
     trash_dir: Option<PathBuf>,
     conflict: Option<ConflictInfo>,
+    /// 操作履歴（メモリ上のみ。上限なし）
+    history: Vec<Entry>,
+    /// 終了時の処理で完全削除したファイル
+    finalized: HashSet<PathBuf>,
 }
 
 impl Session {
-    pub fn new(_fs: Arc<dyn Fs>, _images: Vec<PathBuf>, _trash_dir: Option<PathBuf>) -> Self {
-        todo!()
+    pub fn new(fs: Arc<dyn Fs>, images: Vec<PathBuf>, trash_dir: Option<PathBuf>) -> Self {
+        let items = images
+            .into_iter()
+            .map(|path| Item {
+                path,
+                status: Status::Pending,
+            })
+            .collect();
+        Session {
+            fs,
+            items,
+            cursor: 0,
+            trash_dir,
+            conflict: None,
+            history: Vec::new(),
+            finalized: HashSet::new(),
+        }
     }
-    pub fn set_trash_dir(&mut self, _dir: Option<PathBuf>) {
-        todo!()
+
+    pub fn set_trash_dir(&mut self, dir: Option<PathBuf>) {
+        self.trash_dir = dir;
     }
+
     pub fn items(&self) -> &[Item] {
-        todo!()
+        &self.items
     }
+
     /// 現在表示中の画像の番号。すべて処理し終えたら `None`
     pub fn current(&self) -> Option<usize> {
-        todo!()
+        self.items
+            .get(self.cursor)
+            .filter(|i| i.status.is_open())
+            .map(|_| self.cursor)
     }
-    pub fn apply(&mut self, _action: Action) -> Result<Outcome, FileOpError> {
-        todo!()
+
+    fn current_for_action(&self) -> Result<usize, FileOpError> {
+        if self.conflict.is_some() {
+            return Err(FileOpError::ConflictPending);
+        }
+        self.current().ok_or(FileOpError::NoCurrentItem)
     }
+
+    pub fn apply(&mut self, action: Action) -> Result<Outcome, FileOpError> {
+        let idx = self.current_for_action()?;
+        match action {
+            Action::MoveTo { dir, label } => {
+                if !dir.is_dir() {
+                    return Err(FileOpError::TargetMissing(dir));
+                }
+                let dest = dir.join(file_name(&self.items[idx].path));
+                if self.fs.exists(&dest) {
+                    let info = ConflictInfo {
+                        item: idx,
+                        incoming: self.items[idx].path.clone(),
+                        existing: dest,
+                        dir,
+                        label,
+                    };
+                    self.conflict = Some(info.clone());
+                    return Ok(Outcome::Conflict(info));
+                }
+                self.move_item(idx, dest, format!("→ {label}"), None)?;
+            }
+            Action::Skip => self.push(idx, Status::Skipped, "スキップ".into(), None, None),
+            Action::Delete => self.delete_item(idx, DeletionReason::DeleteKey)?,
+        }
+        self.advance_from(idx);
+        Ok(Outcome::Done)
+    }
+
     pub fn pending_conflict(&self) -> Option<&ConflictInfo> {
-        todo!()
+        self.conflict.as_ref()
     }
-    pub fn resolve_conflict(&mut self, _choice: ConflictChoice) -> Result<(), FileOpError> {
-        todo!()
+
+    pub fn resolve_conflict(&mut self, choice: ConflictChoice) -> Result<(), FileOpError> {
+        let info = self
+            .conflict
+            .clone()
+            .ok_or(FileOpError::NoPendingConflict)?;
+        let idx = info.item;
+        match choice {
+            ConflictChoice::KeepExisting => self.delete_item(idx, DeletionReason::KeepExisting)?,
+            ConflictChoice::Overwrite => {
+                let displaced = self.displace(&info.existing)?;
+                let label = format!("→ {}（上書き）", info.label);
+                if let Err(e) =
+                    self.move_item(idx, info.existing.clone(), label, Some(displaced.clone()))
+                {
+                    // 退避した既存ファイルを元に戻してから失敗を返す
+                    let _ = safe_move(self.fs.as_ref(), &displaced.now, &displaced.original);
+                    return Err(e);
+                }
+            }
+            ConflictChoice::KeepBoth => {
+                let dest = unique_path(self.fs.as_ref(), &info.dir, &file_name(&info.incoming));
+                self.move_item(idx, dest, format!("→ {}（リネーム）", info.label), None)?;
+            }
+            ConflictChoice::Skip => self.push(idx, Status::Skipped, "スキップ".into(), None, None),
+        }
+        self.conflict = None;
+        self.advance_from(idx);
+        Ok(())
     }
+
     pub fn cancel_conflict(&mut self) {
-        todo!()
+        self.conflict = None;
     }
+
     /// 直前の操作を取り消し、その説明を返す
     pub fn undo(&mut self) -> Result<String, FileOpError> {
-        todo!()
+        self.conflict = None;
+        let entry = self
+            .history
+            .last()
+            .cloned()
+            .ok_or(FileOpError::NothingToUndo)?;
+        let original = self.items[entry.item].path.clone();
+
+        let touched = [
+            entry.moved_to.as_ref(),
+            entry.displaced.as_ref().map(|d| &d.now),
+            matches!(self.items[entry.item].status, Status::Marked { .. }).then_some(&original),
+        ];
+        if let Some(gone) = touched
+            .into_iter()
+            .flatten()
+            .find(|p| self.finalized.contains(*p))
+        {
+            return Err(io_err(
+                "完全削除済みのため取り消せません",
+                gone,
+                std::io::Error::from(std::io::ErrorKind::NotFound),
+            ));
+        }
+
+        if let Some(moved_to) = &entry.moved_to {
+            safe_move(self.fs.as_ref(), moved_to, &original).map_err(|e| {
+                io_err("取り消せませんでした（元の場所へ戻せません）", &original, e)
+            })?;
+        }
+        if let Some(d) = &entry.displaced {
+            if let Err(e) = safe_move(self.fs.as_ref(), &d.now, &d.original) {
+                // 既存ファイルを戻せないなら、画像も移動後の状態に戻して整合性を保つ
+                if let Some(moved_to) = &entry.moved_to {
+                    let _ = safe_move(self.fs.as_ref(), &original, moved_to);
+                }
+                return Err(io_err(
+                    "取り消せませんでした（上書き前のファイルを戻せません）",
+                    &d.original,
+                    e,
+                ));
+            }
+        }
+
+        self.history.pop();
+        self.items[entry.item].status = entry.prev_status;
+        self.cursor = entry.item;
+        Ok(format!(
+            "取り消しました: {}（{}）",
+            file_name(&original),
+            entry.label
+        ))
     }
+
     pub fn can_undo(&self) -> bool {
-        todo!()
+        !self.history.is_empty()
     }
+
     /// 新しい順に最大 `n` 件
-    pub fn recent_history(&self, _n: usize) -> Vec<HistoryEntry> {
-        todo!()
+    pub fn recent_history(&self, n: usize) -> Vec<HistoryEntry> {
+        self.history
+            .iter()
+            .rev()
+            .take(n)
+            .map(|e| HistoryEntry {
+                item: e.item,
+                label: e.label.clone(),
+            })
+            .collect()
     }
+
     /// 前の未処理（保留を含む）画像へ
     pub fn go_prev(&mut self) -> bool {
-        todo!()
+        match (0..self.cursor.min(self.items.len()))
+            .rev()
+            .find(|&i| self.items[i].status.is_open())
+        {
+            Some(i) => {
+                self.conflict = None;
+                self.cursor = i;
+                true
+            }
+            None => false,
+        }
     }
-    /// 次の未処理（保留を含む）画像へ
+
+    /// 次の未処理（保留を含む）画像へ。最後の次は完了
     pub fn go_next(&mut self) -> bool {
-        todo!()
+        if self.cursor >= self.items.len() {
+            return false;
+        }
+        self.conflict = None;
+        self.advance_from(self.cursor);
+        true
     }
+
     /// 現在の画像より後ろの未処理画像を最大 `n` 件
-    pub fn upcoming(&self, _n: usize) -> Vec<usize> {
-        todo!()
+    pub fn upcoming(&self, n: usize) -> Vec<usize> {
+        (self.cursor + 1..self.items.len())
+            .filter(|&i| self.items[i].status.is_open())
+            .take(n)
+            .collect()
     }
+
     pub fn pending_deletions(&self) -> Vec<PendingDeletion> {
-        todo!()
+        let items = self.items.iter().filter_map(|item| match &item.status {
+            Status::Trashed { to, reason } => Some(PendingDeletion {
+                path: to.clone(),
+                original: item.path.clone(),
+                reason: *reason,
+                in_trash: true,
+            }),
+            Status::Marked { reason } => Some(PendingDeletion {
+                path: item.path.clone(),
+                original: item.path.clone(),
+                reason: *reason,
+                in_trash: false,
+            }),
+            _ => None,
+        });
+        let displaced = self
+            .history
+            .iter()
+            .filter_map(|e| e.displaced.as_ref())
+            .map(|d| PendingDeletion {
+                path: d.now.clone(),
+                original: d.original.clone(),
+                reason: DeletionReason::Overwritten,
+                in_trash: d.in_trash,
+            });
+        items
+            .chain(displaced)
+            .filter(|p| !self.finalized.contains(&p.path))
+            .collect()
     }
+
     /// 削除予定のファイルを完全削除する（アプリ終了時の確認後にのみ呼ぶ）
     pub fn finalize_deletions(&mut self) -> FinalizeReport {
-        todo!()
+        let mut report = FinalizeReport::default();
+        for pending in self.pending_deletions() {
+            match self.fs.remove_file(&pending.path) {
+                Ok(()) => {
+                    self.finalized.insert(pending.path.clone());
+                    report.deleted.push(pending.path);
+                }
+                Err(e) => report.failed.push((pending.path, e.to_string())),
+            }
+        }
+        report
+    }
+
+    // ---- 内部処理 ----
+
+    fn move_item(
+        &mut self,
+        idx: usize,
+        dest: PathBuf,
+        label: String,
+        displaced: Option<Displaced>,
+    ) -> Result<(), FileOpError> {
+        let from = self.items[idx].path.clone();
+        safe_move(self.fs.as_ref(), &from, &dest)
+            .map_err(|e| io_err("画像を移動できませんでした", &from, e))?;
+        self.push(
+            idx,
+            Status::Moved { to: dest.clone() },
+            label,
+            Some(dest),
+            displaced,
+        );
+        Ok(())
+    }
+
+    fn delete_item(&mut self, idx: usize, reason: DeletionReason) -> Result<(), FileOpError> {
+        let label = match reason {
+            DeletionReason::KeepExisting => "削除（既存を残す）",
+            _ => "削除",
+        }
+        .to_string();
+        match self.trash_dir.clone() {
+            Some(trash) => {
+                if !trash.is_dir() {
+                    return Err(FileOpError::TargetMissing(trash));
+                }
+                let from = self.items[idx].path.clone();
+                let dest = unique_path(self.fs.as_ref(), &trash, &file_name(&from));
+                safe_move(self.fs.as_ref(), &from, &dest)
+                    .map_err(|e| io_err("削除フォルダへ移動できませんでした", &from, e))?;
+                self.push(
+                    idx,
+                    Status::Trashed {
+                        to: dest.clone(),
+                        reason,
+                    },
+                    label,
+                    Some(dest),
+                    None,
+                );
+            }
+            None => self.push(idx, Status::Marked { reason }, label, None, None),
+        }
+        Ok(())
+    }
+
+    /// 上書きされる既存ファイルを退避する。削除フォルダがあればそこへ、なければ同じフォルダでリネームする
+    fn displace(&self, existing: &Path) -> Result<Displaced, FileOpError> {
+        let fs = self.fs.as_ref();
+        let (now, in_trash) = match &self.trash_dir {
+            Some(trash) => {
+                if !trash.is_dir() {
+                    return Err(FileOpError::TargetMissing(trash.clone()));
+                }
+                (unique_path(fs, trash, &file_name(existing)), true)
+            }
+            None => {
+                let stem = existing
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let ext = existing
+                    .extension()
+                    .map(|e| format!(".{}", e.to_string_lossy()))
+                    .unwrap_or_default();
+                let dir = existing.parent().unwrap_or(Path::new("."));
+                (
+                    unique_path(fs, dir, &format!("{stem}.lumiwake-old{ext}")),
+                    false,
+                )
+            }
+        };
+        safe_move(fs, existing, &now)
+            .map_err(|e| io_err("上書きする既存ファイルを退避できませんでした", existing, e))?;
+        Ok(Displaced {
+            original: existing.to_path_buf(),
+            now,
+            in_trash,
+        })
+    }
+
+    fn push(
+        &mut self,
+        idx: usize,
+        status: Status,
+        label: String,
+        moved_to: Option<PathBuf>,
+        displaced: Option<Displaced>,
+    ) {
+        let prev_status = std::mem::replace(&mut self.items[idx].status, status);
+        self.history.push(Entry {
+            item: idx,
+            prev_status,
+            label,
+            moved_to,
+            displaced,
+        });
+    }
+
+    /// `idx` より後ろの最初の未処理画像へ進む。なければ完了
+    fn advance_from(&mut self, idx: usize) {
+        self.cursor = (idx + 1..self.items.len())
+            .find(|&i| self.items[i].status.is_open())
+            .unwrap_or(self.items.len());
     }
 }
 
-#[allow(dead_code)]
-fn file_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+fn io_err(context: &'static str, path: &Path, source: std::io::Error) -> FileOpError {
+    FileOpError::Io {
+        context,
+        path: path.to_path_buf(),
+        source,
+    }
+}
+
+pub(crate) fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -227,7 +583,12 @@ mod tests {
     fn env(n: usize) -> (Env, Vec<PathBuf>) {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        let (src, a, b, trash) = (root.join("src"), root.join("a"), root.join("b"), root.join("trash"));
+        let (src, a, b, trash) = (
+            root.join("src"),
+            root.join("a"),
+            root.join("b"),
+            root.join("trash"),
+        );
         for d in [&src, &a, &b, &trash] {
             fs::create_dir_all(d).unwrap();
         }
@@ -238,7 +599,16 @@ mod tests {
                 p
             })
             .collect();
-        (Env { _tmp: tmp, src, a, b, trash }, images)
+        (
+            Env {
+                _tmp: tmp,
+                src,
+                a,
+                b,
+                trash,
+            },
+            images,
+        )
     }
 
     fn session(images: Vec<PathBuf>, trash: Option<&Path>) -> Session {
@@ -246,7 +616,10 @@ mod tests {
     }
 
     fn move_to(dir: &Path) -> Action {
-        Action::MoveTo { dir: dir.to_path_buf(), label: file_name(dir) }
+        Action::MoveTo {
+            dir: dir.to_path_buf(),
+            label: file_name(dir),
+        }
     }
 
     fn read(p: &Path) -> String {
@@ -261,7 +634,12 @@ mod tests {
         assert_eq!(s.apply(move_to(&e.a)).unwrap(), Outcome::Done);
         assert_eq!(read(&e.a.join("img1.jpg")), "image 1");
         assert!(!imgs[0].exists());
-        assert_eq!(s.items()[0].status, Status::Moved { to: e.a.join("img1.jpg") });
+        assert_eq!(
+            s.items()[0].status,
+            Status::Moved {
+                to: e.a.join("img1.jpg")
+            }
+        );
         assert_eq!(s.current(), Some(1));
     }
 
@@ -281,7 +659,12 @@ mod tests {
         let mut s = session(imgs.clone(), None);
         s.apply(Action::Delete).unwrap();
         assert_eq!(read(&imgs[0]), "image 1", "削除キーではファイルを消さない");
-        assert_eq!(s.items()[0].status, Status::Marked { reason: DeletionReason::DeleteKey });
+        assert_eq!(
+            s.items()[0].status,
+            Status::Marked {
+                reason: DeletionReason::DeleteKey
+            }
+        );
         assert_eq!(s.current(), Some(1));
         assert_eq!(
             s.pending_deletions(),
@@ -328,7 +711,13 @@ mod tests {
         s.apply(Action::Skip).unwrap();
         s.apply(move_to(&e.b)).unwrap();
         assert_eq!(s.current(), Some(4));
-        assert_eq!(s.recent_history(10).iter().map(|h| h.item).collect::<Vec<_>>(), [3, 2, 1, 0]);
+        assert_eq!(
+            s.recent_history(10)
+                .iter()
+                .map(|h| h.item)
+                .collect::<Vec<_>>(),
+            [3, 2, 1, 0]
+        );
 
         for expected_cursor in [3, 2, 1, 0] {
             s.undo().unwrap();
@@ -393,7 +782,10 @@ mod tests {
     #[test]
     fn cross_device_moves_and_undo_work() {
         let (e, imgs) = env(2);
-        let fs_ = Arc::new(FaultyFs { cross_device: true, ..Default::default() });
+        let fs_ = Arc::new(FaultyFs {
+            cross_device: true,
+            ..Default::default()
+        });
         let mut s = Session::new(fs_, imgs.clone(), Some(e.trash.clone()));
         s.apply(move_to(&e.a)).unwrap();
         s.apply(Action::Delete).unwrap();
@@ -419,14 +811,19 @@ mod tests {
     fn conflict_is_reported_before_anything_moves() {
         let (e, imgs, mut s) = conflict_env(false);
         let outcome = s.apply(move_to(&e.a)).unwrap();
-        let Outcome::Conflict(info) = outcome else { panic!("衝突になるはず") };
+        let Outcome::Conflict(info) = outcome else {
+            panic!("衝突になるはず")
+        };
         assert_eq!(info.incoming, imgs[0]);
         assert_eq!(info.existing, e.a.join("img1.jpg"));
         assert_eq!(read(&imgs[0]), "image 1");
         assert_eq!(read(&e.a.join("img1.jpg")), "existing in a");
         assert_eq!(s.current(), Some(0));
         assert!(s.pending_conflict().is_some());
-        assert!(matches!(s.apply(Action::Skip), Err(FileOpError::ConflictPending)));
+        assert!(matches!(
+            s.apply(Action::Skip),
+            Err(FileOpError::ConflictPending)
+        ));
         s.cancel_conflict();
         assert!(s.pending_conflict().is_none());
         assert_eq!(s.current(), Some(0));
@@ -439,7 +836,12 @@ mod tests {
         s.resolve_conflict(ConflictChoice::KeepExisting).unwrap();
         assert_eq!(read(&e.a.join("img1.jpg")), "existing in a");
         assert_eq!(read(&imgs[0]), "image 1", "消さずに削除予定にするだけ");
-        assert_eq!(s.items()[0].status, Status::Marked { reason: DeletionReason::KeepExisting });
+        assert_eq!(
+            s.items()[0].status,
+            Status::Marked {
+                reason: DeletionReason::KeepExisting
+            }
+        );
         assert_eq!(s.current(), Some(1));
         s.undo().unwrap();
         assert_eq!(s.items()[0].status, Status::Pending);
@@ -468,7 +870,11 @@ mod tests {
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].reason, DeletionReason::Overwritten);
         assert_eq!(pending[0].original, e.a.join("img1.jpg"));
-        assert_eq!(read(&pending[0].path), "existing in a", "置き換えられたファイルはまだ消えていない");
+        assert_eq!(
+            read(&pending[0].path),
+            "existing in a",
+            "置き換えられたファイルはまだ消えていない"
+        );
 
         s.undo().unwrap();
         assert_eq!(read(&imgs[0]), "image 1");
@@ -517,7 +923,10 @@ mod tests {
     fn resolve_without_conflict_is_an_error() {
         let (_e, imgs) = env(1);
         let mut s = session(imgs, None);
-        assert!(matches!(s.resolve_conflict(ConflictChoice::Overwrite), Err(FileOpError::NoPendingConflict)));
+        assert!(matches!(
+            s.resolve_conflict(ConflictChoice::Overwrite),
+            Err(FileOpError::NoPendingConflict)
+        ));
     }
 
     // ---- 並び・移動 ----
