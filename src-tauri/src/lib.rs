@@ -1,3 +1,4 @@
+pub mod fileops;
 pub mod format;
 pub mod scanner;
 
