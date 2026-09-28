@@ -43,7 +43,7 @@ MVP（手動仕分け）を実装した。詳細は PR と各コミットを参�
 
 - **updater と Linux の配布形式**: tauri-plugin-updater 2.13 は AppImage・deb・rpm の更新に対応（deb は `pkexec`/`sudo` で `dpkg -i`）
 - **WebView の予約キー（Linux / WebKitGTK）**: keydown の `preventDefault` で Ctrl+R などの再読み込みを止められることを確認。設定画面では F5・Ctrl+R・Ctrl+P・Alt+← などを割り当てると警告する。Windows の WebView2 では未確認
-- **軽量性**: 配布サイズは下記
+- **軽量性**（Linux、`--features avif,heic` のリリースビルド）: 実行ファイル 12 MB、`.deb` 5.1 MiB、`.AppImage` 81 MiB（AppImage は WebKitGTK 一式を同梱するため大きい）。常駐はしない。Windows の `.msi` は未計測
 
 ### 残課題
 
