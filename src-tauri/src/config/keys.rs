@@ -160,6 +160,7 @@ pub fn reserved_reason(combo: &KeyCombo) -> Option<&'static str> {
         "Tab" | "Shift+Tab" => "フォーカス移動",
         "Escape" => "Lumiwake がダイアログを閉じる・全画面を抜けるのに使用",
         "Ctrl+Comma" => "Lumiwake が設定画面を開くのに使用",
+        "Ctrl+Q" => "Lumiwake の終了に使用",
         _ => return None,
     })
 }
