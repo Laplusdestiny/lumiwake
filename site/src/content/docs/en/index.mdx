@@ -1,0 +1,39 @@
+---
+title: Lumiwake
+description: A lightweight desktop app for sorting images into folders with your keyboard
+template: splash
+hero:
+  tagline: See one image at a time and send it to a folder with a single key. Sort hundreds of photos without touching the mouse.
+  actions:
+    - text: Install
+      link: /lumiwake/en/guides/install/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/laplusdestiny/lumiwake
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+<CardGrid stagger>
+  <Card title="One key, one folder" icon="rocket">
+    Assign folders to keys like 1–9 and press to move. Combine with Ctrl / Shift / Alt to use many folders.
+  </Card>
+  <Card title="Mistakes are undoable" icon="approve-check">
+    Undo as many steps as you like. The delete key never removes files; permanent deletion happens only after confirmation when you quit.
+  </Card>
+  <Card title="Compare name clashes" icon="seti:image">
+    If the destination already has a file with the same name, both images are shown side by side: keep existing, overwrite, keep both, or skip.
+  </Card>
+  <Card title="Local disks and NAS" icon="laptop">
+    Works with local folders and SMB shares. A move between drives that fails midway never leaves missing or duplicated files.
+  </Card>
+</CardGrid>
+
+## Requirements
+
+- Windows / Linux (with a desktop environment)
+- JPEG / PNG / WebP / GIF / BMP / TIFF / AVIF / HEIC (no RAW or video; the Windows build currently lacks AVIF / HEIC)
+
+The app UI is in Japanese.
