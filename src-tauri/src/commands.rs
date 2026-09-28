@@ -83,6 +83,22 @@ fn apply_config(state: &AppState, config: Config, load_error: Option<String>) {
     }
 }
 
+/// 設定の一部をファイルに書き戻し、メモリ上の設定も合わせる。
+/// 保存できない場合（ファイルに誤りがある）はメモリ上だけ変更する。
+fn remember(state: &AppState, patch: impl Fn(&mut Config)) {
+    match config::update_file(&state.config_path, &patch) {
+        Ok(updated) => apply_config(state, updated, None),
+        Err(_) => patch(&mut state.config().config),
+    }
+}
+
+/// 表示モードの切り替え（次回の起動時も同じモードにする）
+#[tauri::command]
+pub fn set_view_mode(state: State<'_, AppState>, mode: config::ViewMode) -> ConfigPayload {
+    remember(&state, |c| c.general.view_mode = mode);
+    config_payload(&state)
+}
+
 #[tauri::command]
 pub fn open_config_file(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     app.opener().open_path(lossy(&state.config_path), None::<&str>).map_err(|e| e.to_string())
@@ -254,13 +270,11 @@ pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs
         scanner::scan(&ScanOptions { root: source.clone(), include_subdirs, exclude }, |f| registry.supports(f))
             .map_err(|e| e.to_string())?;
 
-    // 前回の仕分け元として覚えておく（設定に誤りがあって保存できなくても仕分けは続ける）
-    {
-        let mut c = state.config();
-        c.config.general.source_dir = Some(source.clone());
-        c.config.general.include_subdirs = include_subdirs;
-        let _ = config::save(&state.config_path, &c.config);
-    }
+    // 前回の仕分け元として覚えておく（設定ファイルに誤りがあって保存できなくても仕分けは続ける）
+    remember(&state, |c| {
+        c.general.source_dir = Some(source.clone());
+        c.general.include_subdirs = include_subdirs;
+    });
 
     state.cache.clear();
     let generation = state.next_generation();

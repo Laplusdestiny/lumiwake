@@ -15,7 +15,7 @@ import {
   openSettings,
   renderSettings,
 } from "./views/settings";
-import { handleSorterKey, onModeChange, renderSorter } from "./views/sorter";
+import { handleSorterKey, onModeChange, renderSorter, setMode } from "./views/sorter";
 import { pickSource, renderStart, startFromForm } from "./views/start";
 import { checkForUpdates } from "./updater";
 
@@ -47,9 +47,9 @@ onModeChange(async (mode: Config["general"]["view_mode"]) => {
   store.config.config.general.view_mode = mode;
   notify();
   try {
-    store.config = await api.saveConfig(store.config.config);
-  } catch {
-    // 設定に誤りがあって保存できない場合も、表示の切り替えだけは行う
+    store.config = await api.setViewMode(mode);
+  } catch (e) {
+    toast(errorText(e), "error");
   }
 });
 
@@ -110,11 +110,7 @@ document.addEventListener("click", async (e) => {
       case "conflict":
         return void actions.resolveConflict(el.dataset.choice as never);
       case "mode":
-        if (!store.config) return;
-        store.config.config.general.view_mode = el.dataset.mode as Config["general"]["view_mode"];
-        notify();
-        store.config = await api.saveConfig(store.config.config).catch(() => store.config!);
-        return;
+        return setMode(el.dataset.mode as Config["general"]["view_mode"]);
       case "settings":
         return openSettings();
       case "change-source":

@@ -131,6 +131,7 @@ export const api = {
   validateConfig: (config: Config) => invoke<Issue[]>("validate_config", { config }),
   saveConfig: (config: Config) => invoke<ConfigPayload>("save_config", { config }),
   reloadConfig: () => invoke<ConfigPayload>("reload_config"),
+  setViewMode: (mode: ViewMode) => invoke<ConfigPayload>("set_view_mode", { mode }),
   openConfigFile: () => invoke<void>("open_config_file"),
   openLocation: (path: string) => invoke<void>("open_location", { path }),
   listSubfolders: (path: string) => invoke<string[]>("list_subfolders", { path }),

@@ -42,6 +42,7 @@ pub fn run() {
             commands::validate_config,
             commands::save_config,
             commands::reload_config,
+            commands::set_view_mode,
             commands::open_config_file,
             commands::open_location,
             commands::list_subfolders,

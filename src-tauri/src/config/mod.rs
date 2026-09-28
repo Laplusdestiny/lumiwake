@@ -335,6 +335,15 @@ pub fn save(path: &Path, config: &Config) -> Result<(Config, Vec<Issue>), Config
     Ok((config, issues))
 }
 
+/// ファイルを読み直して一部の項目だけを書き換える（前回の仕分け元・表示モードなど）。
+/// 手で編集した内容をメモリ上の古い設定で上書きしないよう、必ずファイルの内容を土台にする。
+/// ファイルに誤りがある場合は何も書き込まない。
+pub fn update_file(path: &Path, patch: impl FnOnce(&mut Config)) -> Result<Config, ConfigError> {
+    let mut config = load_or_create(path)?;
+    patch(&mut config);
+    save(path, &config).map(|(c, _)| c)
+}
+
 /// 一時ファイルに書いてから置き換え、書き込み途中で壊れないようにする
 fn write_file(path: &Path, config: &Config) -> Result<(), ConfigError> {
     let err = |source| ConfigError::Write { path: path.to_path_buf(), source };
@@ -440,6 +449,31 @@ mod tests {
         let (saved, _) = save(&path, &c).unwrap();
         assert_eq!(saved.targets[0].key, "Ctrl+2");
         assert_eq!(load_or_create(&path).unwrap(), saved);
+    }
+
+    #[test]
+    fn update_file_keeps_hand_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let in_memory = load_or_create(&path).unwrap();
+        // アプリの起動中に手で編集された
+        let mut edited = in_memory.clone();
+        edited.targets.push(target("5", "手で追加", dir.path()));
+        std::fs::write(&path, to_toml(&edited)).unwrap();
+
+        let updated = update_file(&path, |c| c.general.view_mode = ViewMode::Focus).unwrap();
+        assert_eq!(updated.general.view_mode, ViewMode::Focus);
+        assert_eq!(updated.targets.len(), 1, "手で追加した振り分け先が残る");
+        assert_eq!(load_or_create(&path).unwrap(), updated);
+    }
+
+    #[test]
+    fn update_file_does_not_touch_broken_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[general\n").unwrap();
+        assert!(update_file(&path, |c| c.general.view_mode = ViewMode::Focus).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[general\n");
     }
 
     #[test]
