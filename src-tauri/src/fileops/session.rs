@@ -176,22 +176,8 @@ pub struct Session {
 
 impl Session {
     pub fn new(fs: Arc<dyn Fs>, images: Vec<PathBuf>, trash_dir: Option<PathBuf>) -> Self {
-        let items = images
-            .into_iter()
-            .map(|path| Item {
-                path,
-                status: Status::Pending,
-            })
-            .collect();
-        Session {
-            fs,
-            items,
-            cursor: 0,
-            trash_dir,
-            conflict: None,
-            history: Vec::new(),
-            finalized: HashSet::new(),
-        }
+        let items = images.into_iter().map(|path| Item { path, status: Status::Pending }).collect();
+        Session { fs, items, cursor: 0, trash_dir, conflict: None, history: Vec::new(), finalized: HashSet::new() }
     }
 
     pub fn set_trash_dir(&mut self, dir: Option<PathBuf>) {
@@ -204,10 +190,7 @@ impl Session {
 
     /// 現在表示中の画像の番号。すべて処理し終えたら `None`
     pub fn current(&self) -> Option<usize> {
-        self.items
-            .get(self.cursor)
-            .filter(|i| i.status.is_open())
-            .map(|_| self.cursor)
+        self.items.get(self.cursor).filter(|i| i.status.is_open()).map(|_| self.cursor)
     }
 
     fn current_for_action(&self) -> Result<usize, FileOpError> {
@@ -226,13 +209,8 @@ impl Session {
                 }
                 let dest = dir.join(file_name(&self.items[idx].path));
                 if self.fs.exists(&dest) {
-                    let info = ConflictInfo {
-                        item: idx,
-                        incoming: self.items[idx].path.clone(),
-                        existing: dest,
-                        dir,
-                        label,
-                    };
+                    let info =
+                        ConflictInfo { item: idx, incoming: self.items[idx].path.clone(), existing: dest, dir, label };
                     self.conflict = Some(info.clone());
                     return Ok(Outcome::Conflict(info));
                 }
@@ -250,19 +228,14 @@ impl Session {
     }
 
     pub fn resolve_conflict(&mut self, choice: ConflictChoice) -> Result<(), FileOpError> {
-        let info = self
-            .conflict
-            .clone()
-            .ok_or(FileOpError::NoPendingConflict)?;
+        let info = self.conflict.clone().ok_or(FileOpError::NoPendingConflict)?;
         let idx = info.item;
         match choice {
             ConflictChoice::KeepExisting => self.delete_item(idx, DeletionReason::KeepExisting)?,
             ConflictChoice::Overwrite => {
                 let displaced = self.displace(&info.existing)?;
                 let label = format!("→ {}（上書き）", info.label);
-                if let Err(e) =
-                    self.move_item(idx, info.existing.clone(), label, Some(displaced.clone()))
-                {
+                if let Err(e) = self.move_item(idx, info.existing.clone(), label, Some(displaced.clone())) {
                     // 退避した既存ファイルを元に戻してから失敗を返す
                     let _ = safe_move(self.fs.as_ref(), &displaced.now, &displaced.original);
                     return Err(e);
@@ -286,11 +259,7 @@ impl Session {
     /// 直前の操作を取り消し、その説明を返す
     pub fn undo(&mut self) -> Result<String, FileOpError> {
         self.conflict = None;
-        let entry = self
-            .history
-            .last()
-            .cloned()
-            .ok_or(FileOpError::NothingToUndo)?;
+        let entry = self.history.last().cloned().ok_or(FileOpError::NothingToUndo)?;
         let original = self.items[entry.item].path.clone();
 
         let touched = [
@@ -298,11 +267,7 @@ impl Session {
             entry.displaced.as_ref().map(|d| &d.now),
             matches!(self.items[entry.item].status, Status::Marked { .. }).then_some(&original),
         ];
-        if let Some(gone) = touched
-            .into_iter()
-            .flatten()
-            .find(|p| self.finalized.contains(*p))
-        {
+        if let Some(gone) = touched.into_iter().flatten().find(|p| self.finalized.contains(*p)) {
             return Err(io_err(
                 "完全削除済みのため取り消せません",
                 gone,
@@ -311,9 +276,8 @@ impl Session {
         }
 
         if let Some(moved_to) = &entry.moved_to {
-            safe_move(self.fs.as_ref(), moved_to, &original).map_err(|e| {
-                io_err("取り消せませんでした（元の場所へ戻せません）", &original, e)
-            })?;
+            safe_move(self.fs.as_ref(), moved_to, &original)
+                .map_err(|e| io_err("取り消せませんでした（元の場所へ戻せません）", &original, e))?;
         }
         if let Some(d) = &entry.displaced {
             if let Err(e) = safe_move(self.fs.as_ref(), &d.now, &d.original) {
@@ -321,22 +285,14 @@ impl Session {
                 if let Some(moved_to) = &entry.moved_to {
                     let _ = safe_move(self.fs.as_ref(), &original, moved_to);
                 }
-                return Err(io_err(
-                    "取り消せませんでした（上書き前のファイルを戻せません）",
-                    &d.original,
-                    e,
-                ));
+                return Err(io_err("取り消せませんでした（上書き前のファイルを戻せません）", &d.original, e));
             }
         }
 
         self.history.pop();
         self.items[entry.item].status = entry.prev_status;
         self.cursor = entry.item;
-        Ok(format!(
-            "取り消しました: {}（{}）",
-            file_name(&original),
-            entry.label
-        ))
+        Ok(format!("取り消しました: {}（{}）", file_name(&original), entry.label))
     }
 
     pub fn can_undo(&self) -> bool {
@@ -345,23 +301,12 @@ impl Session {
 
     /// 新しい順に最大 `n` 件
     pub fn recent_history(&self, n: usize) -> Vec<HistoryEntry> {
-        self.history
-            .iter()
-            .rev()
-            .take(n)
-            .map(|e| HistoryEntry {
-                item: e.item,
-                label: e.label.clone(),
-            })
-            .collect()
+        self.history.iter().rev().take(n).map(|e| HistoryEntry { item: e.item, label: e.label.clone() }).collect()
     }
 
     /// 前の未処理（保留を含む）画像へ
     pub fn go_prev(&mut self) -> bool {
-        match (0..self.cursor.min(self.items.len()))
-            .rev()
-            .find(|&i| self.items[i].status.is_open())
-        {
+        match (0..self.cursor.min(self.items.len())).rev().find(|&i| self.items[i].status.is_open()) {
             Some(i) => {
                 self.conflict = None;
                 self.cursor = i;
@@ -383,20 +328,14 @@ impl Session {
 
     /// 現在の画像より後ろの未処理画像を最大 `n` 件
     pub fn upcoming(&self, n: usize) -> Vec<usize> {
-        (self.cursor + 1..self.items.len())
-            .filter(|&i| self.items[i].status.is_open())
-            .take(n)
-            .collect()
+        (self.cursor + 1..self.items.len()).filter(|&i| self.items[i].status.is_open()).take(n).collect()
     }
 
     pub fn pending_deletions(&self) -> Vec<PendingDeletion> {
         let items = self.items.iter().filter_map(|item| match &item.status {
-            Status::Trashed { to, reason } => Some(PendingDeletion {
-                path: to.clone(),
-                original: item.path.clone(),
-                reason: *reason,
-                in_trash: true,
-            }),
+            Status::Trashed { to, reason } => {
+                Some(PendingDeletion { path: to.clone(), original: item.path.clone(), reason: *reason, in_trash: true })
+            }
             Status::Marked { reason } => Some(PendingDeletion {
                 path: item.path.clone(),
                 original: item.path.clone(),
@@ -405,20 +344,13 @@ impl Session {
             }),
             _ => None,
         });
-        let displaced = self
-            .history
-            .iter()
-            .filter_map(|e| e.displaced.as_ref())
-            .map(|d| PendingDeletion {
-                path: d.now.clone(),
-                original: d.original.clone(),
-                reason: DeletionReason::Overwritten,
-                in_trash: d.in_trash,
-            });
-        items
-            .chain(displaced)
-            .filter(|p| !self.finalized.contains(&p.path))
-            .collect()
+        let displaced = self.history.iter().filter_map(|e| e.displaced.as_ref()).map(|d| PendingDeletion {
+            path: d.now.clone(),
+            original: d.original.clone(),
+            reason: DeletionReason::Overwritten,
+            in_trash: d.in_trash,
+        });
+        items.chain(displaced).filter(|p| !self.finalized.contains(&p.path)).collect()
     }
 
     /// 削除予定のファイルを完全削除する（アプリ終了時の確認後にのみ呼ぶ）
@@ -446,15 +378,8 @@ impl Session {
         displaced: Option<Displaced>,
     ) -> Result<(), FileOpError> {
         let from = self.items[idx].path.clone();
-        safe_move(self.fs.as_ref(), &from, &dest)
-            .map_err(|e| io_err("画像を移動できませんでした", &from, e))?;
-        self.push(
-            idx,
-            Status::Moved { to: dest.clone() },
-            label,
-            Some(dest),
-            displaced,
-        );
+        safe_move(self.fs.as_ref(), &from, &dest).map_err(|e| io_err("画像を移動できませんでした", &from, e))?;
+        self.push(idx, Status::Moved { to: dest.clone() }, label, Some(dest), displaced);
         Ok(())
     }
 
@@ -473,16 +398,7 @@ impl Session {
                 let dest = unique_path(self.fs.as_ref(), &trash, &file_name(&from));
                 safe_move(self.fs.as_ref(), &from, &dest)
                     .map_err(|e| io_err("削除フォルダへ移動できませんでした", &from, e))?;
-                self.push(
-                    idx,
-                    Status::Trashed {
-                        to: dest.clone(),
-                        reason,
-                    },
-                    label,
-                    Some(dest),
-                    None,
-                );
+                self.push(idx, Status::Trashed { to: dest.clone(), reason }, label, Some(dest), None);
             }
             None => self.push(idx, Status::Marked { reason }, label, None, None),
         }
@@ -500,28 +416,15 @@ impl Session {
                 (unique_path(fs, trash, &file_name(existing)), true)
             }
             None => {
-                let stem = existing
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let ext = existing
-                    .extension()
-                    .map(|e| format!(".{}", e.to_string_lossy()))
-                    .unwrap_or_default();
+                let stem = existing.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                let ext = existing.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
                 let dir = existing.parent().unwrap_or(Path::new("."));
-                (
-                    unique_path(fs, dir, &format!("{stem}.lumiwake-old{ext}")),
-                    false,
-                )
+                (unique_path(fs, dir, &format!("{stem}.lumiwake-old{ext}")), false)
             }
         };
         safe_move(fs, existing, &now)
             .map_err(|e| io_err("上書きする既存ファイルを退避できませんでした", existing, e))?;
-        Ok(Displaced {
-            original: existing.to_path_buf(),
-            now,
-            in_trash,
-        })
+        Ok(Displaced { original: existing.to_path_buf(), now, in_trash })
     }
 
     fn push(
@@ -533,35 +436,21 @@ impl Session {
         displaced: Option<Displaced>,
     ) {
         let prev_status = std::mem::replace(&mut self.items[idx].status, status);
-        self.history.push(Entry {
-            item: idx,
-            prev_status,
-            label,
-            moved_to,
-            displaced,
-        });
+        self.history.push(Entry { item: idx, prev_status, label, moved_to, displaced });
     }
 
     /// `idx` より後ろの最初の未処理画像へ進む。なければ完了
     fn advance_from(&mut self, idx: usize) {
-        self.cursor = (idx + 1..self.items.len())
-            .find(|&i| self.items[i].status.is_open())
-            .unwrap_or(self.items.len());
+        self.cursor = (idx + 1..self.items.len()).find(|&i| self.items[i].status.is_open()).unwrap_or(self.items.len());
     }
 }
 
 fn io_err(context: &'static str, path: &Path, source: std::io::Error) -> FileOpError {
-    FileOpError::Io {
-        context,
-        path: path.to_path_buf(),
-        source,
-    }
+    FileOpError::Io { context, path: path.to_path_buf(), source }
 }
 
 pub(crate) fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
+    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -583,12 +472,7 @@ mod tests {
     fn env(n: usize) -> (Env, Vec<PathBuf>) {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        let (src, a, b, trash) = (
-            root.join("src"),
-            root.join("a"),
-            root.join("b"),
-            root.join("trash"),
-        );
+        let (src, a, b, trash) = (root.join("src"), root.join("a"), root.join("b"), root.join("trash"));
         for d in [&src, &a, &b, &trash] {
             fs::create_dir_all(d).unwrap();
         }
@@ -599,16 +483,7 @@ mod tests {
                 p
             })
             .collect();
-        (
-            Env {
-                _tmp: tmp,
-                src,
-                a,
-                b,
-                trash,
-            },
-            images,
-        )
+        (Env { _tmp: tmp, src, a, b, trash }, images)
     }
 
     fn session(images: Vec<PathBuf>, trash: Option<&Path>) -> Session {
@@ -616,10 +491,7 @@ mod tests {
     }
 
     fn move_to(dir: &Path) -> Action {
-        Action::MoveTo {
-            dir: dir.to_path_buf(),
-            label: file_name(dir),
-        }
+        Action::MoveTo { dir: dir.to_path_buf(), label: file_name(dir) }
     }
 
     fn read(p: &Path) -> String {
@@ -634,12 +506,7 @@ mod tests {
         assert_eq!(s.apply(move_to(&e.a)).unwrap(), Outcome::Done);
         assert_eq!(read(&e.a.join("img1.jpg")), "image 1");
         assert!(!imgs[0].exists());
-        assert_eq!(
-            s.items()[0].status,
-            Status::Moved {
-                to: e.a.join("img1.jpg")
-            }
-        );
+        assert_eq!(s.items()[0].status, Status::Moved { to: e.a.join("img1.jpg") });
         assert_eq!(s.current(), Some(1));
     }
 
@@ -659,12 +526,7 @@ mod tests {
         let mut s = session(imgs.clone(), None);
         s.apply(Action::Delete).unwrap();
         assert_eq!(read(&imgs[0]), "image 1", "削除キーではファイルを消さない");
-        assert_eq!(
-            s.items()[0].status,
-            Status::Marked {
-                reason: DeletionReason::DeleteKey
-            }
-        );
+        assert_eq!(s.items()[0].status, Status::Marked { reason: DeletionReason::DeleteKey });
         assert_eq!(s.current(), Some(1));
         assert_eq!(
             s.pending_deletions(),
@@ -711,13 +573,7 @@ mod tests {
         s.apply(Action::Skip).unwrap();
         s.apply(move_to(&e.b)).unwrap();
         assert_eq!(s.current(), Some(4));
-        assert_eq!(
-            s.recent_history(10)
-                .iter()
-                .map(|h| h.item)
-                .collect::<Vec<_>>(),
-            [3, 2, 1, 0]
-        );
+        assert_eq!(s.recent_history(10).iter().map(|h| h.item).collect::<Vec<_>>(), [3, 2, 1, 0]);
 
         for expected_cursor in [3, 2, 1, 0] {
             s.undo().unwrap();
@@ -782,10 +638,7 @@ mod tests {
     #[test]
     fn cross_device_moves_and_undo_work() {
         let (e, imgs) = env(2);
-        let fs_ = Arc::new(FaultyFs {
-            cross_device: true,
-            ..Default::default()
-        });
+        let fs_ = Arc::new(FaultyFs { cross_device: true, ..Default::default() });
         let mut s = Session::new(fs_, imgs.clone(), Some(e.trash.clone()));
         s.apply(move_to(&e.a)).unwrap();
         s.apply(Action::Delete).unwrap();
@@ -811,19 +664,14 @@ mod tests {
     fn conflict_is_reported_before_anything_moves() {
         let (e, imgs, mut s) = conflict_env(false);
         let outcome = s.apply(move_to(&e.a)).unwrap();
-        let Outcome::Conflict(info) = outcome else {
-            panic!("衝突になるはず")
-        };
+        let Outcome::Conflict(info) = outcome else { panic!("衝突になるはず") };
         assert_eq!(info.incoming, imgs[0]);
         assert_eq!(info.existing, e.a.join("img1.jpg"));
         assert_eq!(read(&imgs[0]), "image 1");
         assert_eq!(read(&e.a.join("img1.jpg")), "existing in a");
         assert_eq!(s.current(), Some(0));
         assert!(s.pending_conflict().is_some());
-        assert!(matches!(
-            s.apply(Action::Skip),
-            Err(FileOpError::ConflictPending)
-        ));
+        assert!(matches!(s.apply(Action::Skip), Err(FileOpError::ConflictPending)));
         s.cancel_conflict();
         assert!(s.pending_conflict().is_none());
         assert_eq!(s.current(), Some(0));
@@ -836,12 +684,7 @@ mod tests {
         s.resolve_conflict(ConflictChoice::KeepExisting).unwrap();
         assert_eq!(read(&e.a.join("img1.jpg")), "existing in a");
         assert_eq!(read(&imgs[0]), "image 1", "消さずに削除予定にするだけ");
-        assert_eq!(
-            s.items()[0].status,
-            Status::Marked {
-                reason: DeletionReason::KeepExisting
-            }
-        );
+        assert_eq!(s.items()[0].status, Status::Marked { reason: DeletionReason::KeepExisting });
         assert_eq!(s.current(), Some(1));
         s.undo().unwrap();
         assert_eq!(s.items()[0].status, Status::Pending);
@@ -870,11 +713,7 @@ mod tests {
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].reason, DeletionReason::Overwritten);
         assert_eq!(pending[0].original, e.a.join("img1.jpg"));
-        assert_eq!(
-            read(&pending[0].path),
-            "existing in a",
-            "置き換えられたファイルはまだ消えていない"
-        );
+        assert_eq!(read(&pending[0].path), "existing in a", "置き換えられたファイルはまだ消えていない");
 
         s.undo().unwrap();
         assert_eq!(read(&imgs[0]), "image 1");
@@ -923,10 +762,7 @@ mod tests {
     fn resolve_without_conflict_is_an_error() {
         let (_e, imgs) = env(1);
         let mut s = session(imgs, None);
-        assert!(matches!(
-            s.resolve_conflict(ConflictChoice::Overwrite),
-            Err(FileOpError::NoPendingConflict)
-        ));
+        assert!(matches!(s.resolve_conflict(ConflictChoice::Overwrite), Err(FileOpError::NoPendingConflict)));
     }
 
     // ---- 並び・移動 ----

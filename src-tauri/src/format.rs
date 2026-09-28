@@ -18,16 +18,8 @@ pub enum Format {
 }
 
 impl Format {
-    pub const ALL: [Format; 8] = [
-        Format::Jpeg,
-        Format::Png,
-        Format::Webp,
-        Format::Gif,
-        Format::Bmp,
-        Format::Tiff,
-        Format::Avif,
-        Format::Heic,
-    ];
+    pub const ALL: [Format; 8] =
+        [Format::Jpeg, Format::Png, Format::Webp, Format::Gif, Format::Bmp, Format::Tiff, Format::Avif, Format::Heic];
 
     /// 拡張子から形式を判定する（大文字小文字は区別しない）。
     pub fn from_extension(ext: &str) -> Option<Format> {
@@ -46,9 +38,7 @@ impl Format {
     }
 
     pub fn from_path(path: &Path) -> Option<Format> {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .and_then(Format::from_extension)
+        path.extension().and_then(|e| e.to_str()).and_then(Format::from_extension)
     }
 
     /// 画面表示用の名前
@@ -72,10 +62,7 @@ mod tests {
 
     #[test]
     fn detects_extensions_case_insensitively() {
-        assert_eq!(
-            Format::from_path(Path::new("a/IMG_1.JPG")),
-            Some(Format::Jpeg)
-        );
+        assert_eq!(Format::from_path(Path::new("a/IMG_1.JPG")), Some(Format::Jpeg));
         assert_eq!(Format::from_path(Path::new("b.jpeg")), Some(Format::Jpeg));
         assert_eq!(Format::from_path(Path::new("c.HeIc")), Some(Format::Heic));
         assert_eq!(Format::from_path(Path::new("d.tif")), Some(Format::Tiff));

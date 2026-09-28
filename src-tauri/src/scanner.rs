@@ -37,21 +37,13 @@ pub enum ScanError {
 }
 
 /// フォルダを走査する。`is_supported` はその形式を表示できるかを返す。
-pub fn scan(
-    opts: &ScanOptions,
-    is_supported: impl Fn(Format) -> bool,
-) -> Result<ScanResult, ScanError> {
-    let root =
-        dunce::canonicalize(&opts.root).map_err(|_| ScanError::NotFound(opts.root.clone()))?;
+pub fn scan(opts: &ScanOptions, is_supported: impl Fn(Format) -> bool) -> Result<ScanResult, ScanError> {
+    let root = dunce::canonicalize(&opts.root).map_err(|_| ScanError::NotFound(opts.root.clone()))?;
     if !root.is_dir() {
         return Err(ScanError::NotFound(opts.root.clone()));
     }
     // 存在しない除外先は無視する（まだ作られていない振り分け先など）
-    let exclude: Vec<PathBuf> = opts
-        .exclude
-        .iter()
-        .filter_map(|p| dunce::canonicalize(p).ok())
-        .collect();
+    let exclude: Vec<PathBuf> = opts.exclude.iter().filter_map(|p| dunce::canonicalize(p).ok()).collect();
     if exclude.iter().any(|ex| root.starts_with(ex)) {
         return Err(ScanError::RootExcluded(opts.root.clone()));
     }
@@ -107,9 +99,7 @@ fn is_excluded(dir: &Path, exclude: &[PathBuf]) -> bool {
 
 /// Lumiwake がファイル操作中に作る一時ファイル
 pub fn is_internal_file(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| n.contains(".lumiwake-tmp"))
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.contains(".lumiwake-tmp"))
 }
 
 /// パスを自然順（IMG_2 < IMG_10）で比較する。大文字小文字は区別しない。
@@ -132,11 +122,7 @@ fn natural_cmp(a: &str, b: &str) -> Ordering {
                 let nb = take_number(&mut bi);
                 let ta = na.trim_start_matches('0');
                 let tb = nb.trim_start_matches('0');
-                let ord = ta
-                    .len()
-                    .cmp(&tb.len())
-                    .then_with(|| ta.cmp(tb))
-                    .then_with(|| na.len().cmp(&nb.len()));
+                let ord = ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb)).then_with(|| na.len().cmp(&nb.len()));
                 if ord != Ordering::Equal {
                     return ord;
                 }
@@ -176,15 +162,7 @@ mod tests {
 
     fn names(paths: &[PathBuf], root: &Path) -> Vec<String> {
         let root = dunce::canonicalize(root).unwrap();
-        paths
-            .iter()
-            .map(|p| {
-                p.strip_prefix(&root)
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/")
-            })
-            .collect()
+        paths.iter().map(|p| p.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/")).collect()
     }
 
     fn all_supported(_: Format) -> bool {
@@ -194,29 +172,13 @@ mod tests {
     #[test]
     fn lists_images_in_natural_order_without_subdirs() {
         let dir = tempfile::tempdir().unwrap();
-        for n in [
-            "IMG_10.jpg",
-            "IMG_2.JPG",
-            "IMG_1.png",
-            "memo.txt",
-            "raw.cr2",
-        ] {
+        for n in ["IMG_10.jpg", "IMG_2.JPG", "IMG_1.png", "memo.txt", "raw.cr2"] {
             touch(&dir.path().join(n));
         }
         touch(&dir.path().join("sub/inner.jpg"));
-        let r = scan(
-            &ScanOptions {
-                root: dir.path().into(),
-                include_subdirs: false,
-                exclude: vec![],
-            },
-            all_supported,
-        )
-        .unwrap();
-        assert_eq!(
-            names(&r.images, dir.path()),
-            ["IMG_1.png", "IMG_2.JPG", "IMG_10.jpg"]
-        );
+        let r = scan(&ScanOptions { root: dir.path().into(), include_subdirs: false, exclude: vec![] }, all_supported)
+            .unwrap();
+        assert_eq!(names(&r.images, dir.path()), ["IMG_1.png", "IMG_2.JPG", "IMG_10.jpg"]);
     }
 
     #[test]
@@ -232,19 +194,12 @@ mod tests {
             &ScanOptions {
                 root: root.into(),
                 include_subdirs: true,
-                exclude: vec![
-                    root.join("風景"),
-                    root.join("trash"),
-                    root.join("not-yet-created"),
-                ],
+                exclude: vec![root.join("風景"), root.join("trash"), root.join("not-yet-created")],
             },
             all_supported,
         )
         .unwrap();
-        assert_eq!(
-            names(&r.images, root),
-            ["a.jpg", "sub/b.jpg", "sub/deep/c.jpg"]
-        );
+        assert_eq!(names(&r.images, root), ["a.jpg", "sub/b.jpg", "sub/deep/c.jpg"]);
     }
 
     #[test]
@@ -252,14 +207,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         touch(&dir.path().join("a.jpg"));
         touch(&dir.path().join("b.heic"));
-        let r = scan(
-            &ScanOptions {
-                root: dir.path().into(),
-                include_subdirs: false,
-                exclude: vec![],
-            },
-            |f| f != Format::Heic,
-        )
+        let r = scan(&ScanOptions { root: dir.path().into(), include_subdirs: false, exclude: vec![] }, |f| {
+            f != Format::Heic
+        })
         .unwrap();
         assert_eq!(names(&r.images, dir.path()), ["a.jpg"]);
         assert_eq!(names(&r.unsupported, dir.path()), ["b.heic"]);
@@ -270,15 +220,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         touch(&dir.path().join("a.jpg"));
         touch(&dir.path().join(".a.jpg.lumiwake-tmp-1-0.jpg"));
-        let r = scan(
-            &ScanOptions {
-                root: dir.path().into(),
-                include_subdirs: false,
-                exclude: vec![],
-            },
-            all_supported,
-        )
-        .unwrap();
+        let r = scan(&ScanOptions { root: dir.path().into(), include_subdirs: false, exclude: vec![] }, all_supported)
+            .unwrap();
         assert_eq!(names(&r.images, dir.path()), ["a.jpg"]);
     }
 
@@ -302,11 +245,7 @@ mod tests {
     fn missing_root_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         let err = scan(
-            &ScanOptions {
-                root: dir.path().join("nope"),
-                include_subdirs: false,
-                exclude: vec![],
-            },
+            &ScanOptions { root: dir.path().join("nope"), include_subdirs: false, exclude: vec![] },
             all_supported,
         )
         .unwrap_err();

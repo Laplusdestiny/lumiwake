@@ -123,20 +123,14 @@ fn copy_then_remove(fs: &dyn Fs, from: &Path, to: &Path) -> io::Result<()> {
 }
 
 fn already_exists(path: &Path) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::AlreadyExists,
-        format!("同名のファイルがあります: {}", path.display()),
-    )
+    io::Error::new(io::ErrorKind::AlreadyExists, format!("同名のファイルがあります: {}", path.display()))
 }
 
 /// コピー先と同じフォルダに作る一時ファイル名（スキャナはこの名前を無視する）
 fn temp_path_for(to: &Path) -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = to
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let name = to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     to.with_file_name(format!(".{name}.lumiwake-tmp-{}-{n}", std::process::id()))
 }
 
@@ -147,18 +141,9 @@ pub fn unique_path(fs: &dyn Fs, dir: &Path, file_name: &str) -> PathBuf {
         return candidate;
     }
     let name = Path::new(file_name);
-    let stem = name
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let ext = name
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy()))
-        .unwrap_or_default();
-    (2u64..)
-        .map(|i| dir.join(format!("{stem} ({i}){ext}")))
-        .find(|p| !fs.exists(p))
-        .expect("連番は尽きない")
+    let stem = name.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = name.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    (2u64..).map(|i| dir.join(format!("{stem} ({i}){ext}"))).find(|p| !fs.exists(p)).expect("連番は尽きない")
 }
 
 #[cfg(test)]
@@ -179,10 +164,7 @@ pub(crate) mod tests {
     impl Fs for FaultyFs {
         fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
             if self.cross_device && from.parent() != to.parent() {
-                return Err(io::Error::new(
-                    io::ErrorKind::CrossesDevices,
-                    "cross-device link",
-                ));
+                return Err(io::Error::new(io::ErrorKind::CrossesDevices, "cross-device link"));
             }
             RealFs.rename(from, to)
         }
@@ -202,10 +184,7 @@ pub(crate) mod tests {
         }
         fn remove_file(&self, path: &Path) -> io::Result<()> {
             // 仕分け元フォルダ（src）にある元ファイルだけを削除できないことにする
-            let in_src_dir = path
-                .parent()
-                .and_then(|p| p.file_name())
-                .is_some_and(|n| n == "src");
+            let in_src_dir = path.parent().and_then(|p| p.file_name()).is_some_and(|n| n == "src");
             if self.fail_remove_source.load(Ordering::SeqCst) && in_src_dir {
                 return Err(io::Error::new(io::ErrorKind::PermissionDenied, "locked"));
             }
@@ -221,10 +200,8 @@ pub(crate) mod tests {
 
     /// ディレクトリ内のファイル名一覧（一時ファイルの取り残し検出用）
     pub fn listing(dir: &Path) -> Vec<String> {
-        let mut v: Vec<String> = fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
+        let mut v: Vec<String> =
+            fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         v.sort();
         v
     }
@@ -242,11 +219,7 @@ pub(crate) mod tests {
         fs::create_dir_all(&src_dir).unwrap();
         fs::create_dir_all(&dst_dir).unwrap();
         fs::write(src_dir.join("src.jpg"), b"original image bytes").unwrap();
-        Fixture {
-            _tmp: tmp,
-            src_dir,
-            dst_dir,
-        }
+        Fixture { _tmp: tmp, src_dir, dst_dir }
     }
 
     #[test]
@@ -266,81 +239,48 @@ pub(crate) mod tests {
         let err = safe_move(&RealFs, &f.src_dir.join("src.jpg"), &to).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs::read(&to).unwrap(), b"existing");
-        assert_eq!(
-            fs::read(f.src_dir.join("src.jpg")).unwrap(),
-            b"original image bytes"
-        );
+        assert_eq!(fs::read(f.src_dir.join("src.jpg")).unwrap(), b"original image bytes");
     }
 
     #[test]
     fn cross_device_move_copies_then_removes_source() {
         let f = fixture();
-        let fs_ = FaultyFs {
-            cross_device: true,
-            ..Default::default()
-        };
+        let fs_ = FaultyFs { cross_device: true, ..Default::default() };
         let to = f.dst_dir.join("src.jpg");
         safe_move(&fs_, &f.src_dir.join("src.jpg"), &to).unwrap();
         assert_eq!(fs::read(&to).unwrap(), b"original image bytes");
         assert!(listing(&f.src_dir).is_empty());
-        assert_eq!(
-            listing(&f.dst_dir),
-            ["src.jpg"],
-            "一時ファイルが残っていない"
-        );
+        assert_eq!(listing(&f.dst_dir), ["src.jpg"], "一時ファイルが残っていない");
     }
 
     #[test]
     fn failed_copy_leaves_only_the_source() {
         let f = fixture();
-        let fs_ = FaultyFs {
-            cross_device: true,
-            fail_copy_midway: true,
-            ..Default::default()
-        };
+        let fs_ = FaultyFs { cross_device: true, fail_copy_midway: true, ..Default::default() };
         let err = safe_move(&fs_, &f.src_dir.join("src.jpg"), &f.dst_dir.join("src.jpg"));
         assert!(err.is_err());
-        assert_eq!(
-            fs::read(f.src_dir.join("src.jpg")).unwrap(),
-            b"original image bytes"
-        );
-        assert!(
-            listing(&f.dst_dir).is_empty(),
-            "コピー途中のファイルを片付ける"
-        );
+        assert_eq!(fs::read(f.src_dir.join("src.jpg")).unwrap(), b"original image bytes");
+        assert!(listing(&f.dst_dir).is_empty(), "コピー途中のファイルを片付ける");
     }
 
     #[test]
     fn size_mismatch_after_copy_is_rejected() {
         let f = fixture();
-        let fs_ = FaultyFs {
-            cross_device: true,
-            truncate_copy: true,
-            ..Default::default()
-        };
+        let fs_ = FaultyFs { cross_device: true, truncate_copy: true, ..Default::default() };
         let err = safe_move(&fs_, &f.src_dir.join("src.jpg"), &f.dst_dir.join("src.jpg"));
         assert!(err.is_err());
-        assert_eq!(
-            fs::read(f.src_dir.join("src.jpg")).unwrap(),
-            b"original image bytes"
-        );
+        assert_eq!(fs::read(f.src_dir.join("src.jpg")).unwrap(), b"original image bytes");
         assert!(listing(&f.dst_dir).is_empty());
     }
 
     #[test]
     fn failing_to_remove_source_rolls_back_the_copy() {
         let f = fixture();
-        let fs_ = FaultyFs {
-            cross_device: true,
-            ..Default::default()
-        };
+        let fs_ = FaultyFs { cross_device: true, ..Default::default() };
         fs_.fail_remove_source.store(true, Ordering::SeqCst);
         let err = safe_move(&fs_, &f.src_dir.join("src.jpg"), &f.dst_dir.join("src.jpg"));
         assert!(err.is_err());
-        assert_eq!(
-            fs::read(f.src_dir.join("src.jpg")).unwrap(),
-            b"original image bytes"
-        );
+        assert_eq!(fs::read(f.src_dir.join("src.jpg")).unwrap(), b"original image bytes");
         assert!(listing(&f.dst_dir).is_empty(), "重複を残さない");
     }
 
@@ -349,12 +289,7 @@ pub(crate) mod tests {
         let f = fixture();
         let src = f.src_dir.join("src.jpg");
         let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
-        fs::File::options()
-            .write(true)
-            .open(&src)
-            .unwrap()
-            .set_modified(old)
-            .unwrap();
+        fs::File::options().write(true).open(&src).unwrap().set_modified(old).unwrap();
         let to = f.dst_dir.join("src.jpg");
         RealFs.copy_new(&src, &to).unwrap();
         assert_eq!(fs::metadata(&to).unwrap().modified().unwrap(), old);
@@ -372,24 +307,12 @@ pub(crate) mod tests {
     #[test]
     fn unique_path_appends_counter() {
         let f = fixture();
-        assert_eq!(
-            unique_path(&RealFs, &f.dst_dir, "a.jpg"),
-            f.dst_dir.join("a.jpg")
-        );
+        assert_eq!(unique_path(&RealFs, &f.dst_dir, "a.jpg"), f.dst_dir.join("a.jpg"));
         fs::write(f.dst_dir.join("a.jpg"), b"").unwrap();
-        assert_eq!(
-            unique_path(&RealFs, &f.dst_dir, "a.jpg"),
-            f.dst_dir.join("a (2).jpg")
-        );
+        assert_eq!(unique_path(&RealFs, &f.dst_dir, "a.jpg"), f.dst_dir.join("a (2).jpg"));
         fs::write(f.dst_dir.join("a (2).jpg"), b"").unwrap();
-        assert_eq!(
-            unique_path(&RealFs, &f.dst_dir, "a.jpg"),
-            f.dst_dir.join("a (3).jpg")
-        );
+        assert_eq!(unique_path(&RealFs, &f.dst_dir, "a.jpg"), f.dst_dir.join("a (3).jpg"));
         fs::write(f.dst_dir.join("noext"), b"").unwrap();
-        assert_eq!(
-            unique_path(&RealFs, &f.dst_dir, "noext"),
-            f.dst_dir.join("noext (2)")
-        );
+        assert_eq!(unique_path(&RealFs, &f.dst_dir, "noext"), f.dst_dir.join("noext (2)"));
     }
 }
