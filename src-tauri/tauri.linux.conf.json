@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "linux": {
+      "deb": {
+        "depends": [
+          "libheif1 (>= 1.17)",
+          "libheif-plugin-libde265",
+          "libdav1d7"
+        ]
+      }
+    }
+  }
+}
