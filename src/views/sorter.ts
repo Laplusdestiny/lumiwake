@@ -134,43 +134,40 @@ function updatePreview(slot: HTMLElement, s: SessionView): void {
   img.addEventListener("error", () => slot.classList.remove("loading"), { once: true });
 }
 
-/** フィルムストリップに出す直近の操作の数（Rust 側の HISTORY_TILES と同じ） */
-const HISTORY_TILES = 4;
-const UPCOMING_TILES = 3;
+/** フィルムストリップに出す次の画像の数（Rust 側で先読みする upcoming と同じ 4 枚） */
+const UPCOMING_TILES = 4;
 
 function thumb(s: SessionView, index: number): string {
   return `<img src="${lumiUrl(`thumb/${s.generation}/${index}`)}" alt="" loading="lazy">`;
 }
 
 function filmstripHtml(s: SessionView): string {
-  const tiles: string[] = [];
-  // 保留中の画像の数。クリックで保留中の画像へ移動する
-  if (s.skipped > 0) {
-    const target = s.nextSkipped;
-    tiles.push(
-      target != null
-        ? `<button class="skip-chip" data-action="jump" data-index="${target}" title="クリックで保留中の画像へ移動">保留<strong>${formatCount(s.skipped)}</strong>枚</button>`
-        : `<div class="skip-chip" title="保留中の画像">保留<strong>${formatCount(s.skipped)}</strong>枚</div>`,
-    );
-  }
-  // 直近の操作（古い順）。保留した画像はクリックでその画像に戻って振り分け直せる
-  const history = [...s.history].reverse();
-  for (let i = history.length; i < HISTORY_TILES; i++) tiles.push(`<div class="tile tile-empty"></div>`);
-  for (const h of history) {
-    const label = `<span class="tile-label">${esc(h.label)}</span>`;
-    tiles.push(
-      h.open
+  // 左: 直近の操作（古い順。幅が足りなければ古いものから隠れる）。保留した画像はクリックで戻って振り分け直せる
+  const past = [...s.history]
+    .reverse()
+    .map((h) => {
+      const label = `<span class="tile-label">${esc(h.label)}</span>`;
+      return h.open
         ? `<button class="tile tile-hist tile-open" data-action="jump" data-index="${h.item}" title="${esc(h.label)}：クリックでこの画像に戻って振り分け直す">${thumb(s, h.item)}${label}</button>`
-        : `<div class="tile tile-hist kind-${h.kind}" title="${esc(h.label)}（${esc(displayCombo(store.config!.config.keys.undo))} で取り消し）">${thumb(s, h.item)}${label}</div>`,
-    );
-  }
-  if (s.current) {
-    tiles.push(`<div class="tile tile-current">${thumb(s, s.current.index)}</div>`);
-  }
-  for (const i of s.upcoming.slice(0, UPCOMING_TILES)) {
-    tiles.push(`<div class="tile">${thumb(s, i)}</div>`);
-  }
-  return tiles.join("");
+        : `<div class="tile tile-hist kind-${h.kind}" title="${esc(h.label)}（${esc(displayCombo(store.config!.config.keys.undo))} で取り消し）">${thumb(s, h.item)}${label}</div>`;
+    })
+    .join("");
+  // 中央: 現在の画像 / 右: 次の画像（先読みと同じ枚数）
+  const now = s.current ? `<div class="tile tile-current">${thumb(s, s.current.index)}</div>` : "";
+  const next = s.upcoming
+    .slice(0, UPCOMING_TILES)
+    .map((i) => `<div class="tile">${thumb(s, i)}</div>`)
+    .join("");
+  return `<div class="film-past">${past}</div><div class="film-now">${now}</div><div class="film-next">${next}</div>`;
+}
+
+/** 保留中の画像の数。クリックで次の保留中の画像へ移動する */
+function skipChipHtml(s: SessionView): string {
+  if (s.skipped === 0) return "";
+  const text = `保留 <strong>${formatCount(s.skipped)}</strong> 枚`;
+  return s.nextSkipped != null
+    ? `<button class="skip-chip" data-action="jump" data-index="${s.nextSkipped}" title="クリックで保留中の画像へ移動">${text}</button>`
+    : `<span class="skip-chip" title="保留中の画像（表示中）">${text}</span>`;
 }
 
 function hintsHtml(): string {
@@ -268,7 +265,7 @@ export function renderSorter(root: HTMLElement): void {
   updatePreview(slot("preview")!, s);
   const film = slot("filmstrip");
   if (film) film.innerHTML = filmstripHtml(s);
-  slot("hints")!.innerHTML = hintsHtml();
+  slot("hints")!.innerHTML = skipChipHtml(s) + hintsHtml();
   slot("targets")!.innerHTML = mode === "focus" ? chipsHtml() : targetsHtml(s);
   root.querySelectorAll<HTMLButtonElement>('[data-action="undo"]').forEach((b) => (b.disabled = !s.canUndo));
 }
