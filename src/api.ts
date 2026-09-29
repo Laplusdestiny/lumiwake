@@ -13,6 +13,8 @@ export interface Target {
 
 /** TOML の設定そのもの（キー名は TOML と同じ snake_case） */
 export interface Config {
+  /** 設定ファイルの形式のバージョン */
+  version: number;
   general: {
     source_dir?: string;
     include_subdirs: boolean;
@@ -22,6 +24,7 @@ export interface Config {
     accent: Accent;
     prefetch: number;
     check_updates: boolean;
+    show_paths: boolean;
   };
   keys: {
     skip: string;
@@ -30,6 +33,7 @@ export interface Config {
     prev: string;
     next: string;
     toggle_view: string;
+    toggle_paths: string;
   };
   targets: Target[];
 }
@@ -137,6 +141,7 @@ export const api = {
   saveConfig: (config: Config) => invoke<ConfigPayload>("save_config", { config }),
   reloadConfig: () => invoke<ConfigPayload>("reload_config"),
   setViewMode: (mode: ViewMode) => invoke<ConfigPayload>("set_view_mode", { mode }),
+  setShowPaths: (show: boolean) => invoke<ConfigPayload>("set_show_paths", { show }),
   openConfigFile: () => invoke<void>("open_config_file"),
   openLocation: (path: string) => invoke<void>("open_location", { path }),
   listSubfolders: (path: string) => invoke<string[]>("list_subfolders", { path }),

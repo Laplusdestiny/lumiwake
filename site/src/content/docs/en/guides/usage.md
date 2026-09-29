@@ -26,7 +26,8 @@ Choose the folder containing the images to sort and press **読み込んで開�
 | <kbd>Delete</kbd> | Delete (move to the delete folder, or mark for deletion) |
 | <kbd>←</kbd> / <kbd>→</kbd> | Previous / next image (processed images are skipped) |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | Undo (unlimited) |
-| <kbd>F</kbd> | Toggle sidebar / full-screen view |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | Toggle sidebar / full-screen view |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> | Show / hide folder paths in the destination list (also a button above the list) |
 | <kbd>Esc</kbd> | Leave full-screen / close dialogs |
 | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | Quit |
 

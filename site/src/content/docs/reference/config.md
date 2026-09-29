@@ -24,6 +24,7 @@ view_mode = "sidebar"                    # "sidebar" / "focus"
 accent = "amber"                         # "amber" / "blue" / "green"
 prefetch = 4                             # 先読みする枚数（0〜16）
 check_updates = true                     # 起動時にアップデートを確認
+show_paths = true                        # 振り分け先リストにパスを表示（同名フォルダは常に表示）
 
 [keys]
 skip = "Space"
@@ -31,7 +32,8 @@ delete = "Delete"
 undo = "Ctrl+Z"
 prev = "Left"
 next = "Right"
-toggle_view = "F"
+toggle_view = "Ctrl+Shift+F"             # サイドバー型 ⇔ 全画面型
+toggle_paths = "Ctrl+Shift+P"            # パス表示の切り替え
 
 [[targets]]
 key = "1"

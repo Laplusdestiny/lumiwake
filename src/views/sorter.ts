@@ -1,8 +1,9 @@
 // 仕分け画面（サイドバー型・全画面集中型）
-import { lumiUrl, type Config, type SessionView } from "../api";
+import { api, errorText, lumiUrl, type Config, type SessionView } from "../api";
 import * as actions from "../actions";
 import { displayCombo } from "../keys";
-import { store } from "../store";
+import { notify, store } from "../store";
+import { toast } from "../toast";
 import { esc, formatBytes, formatCount, formatDate, icons, keycap, shortPath } from "../util";
 
 type Mode = Config["general"]["view_mode"];
@@ -37,7 +38,7 @@ function sidebarSkeleton(): string {
       </main>
       <aside class="targets-panel">
         <div class="resize-handle" data-resize title="ドラッグで幅を変更（ダブルクリックで元の幅に戻す）"></div>
-        <div class="panel-head"><div class="panel-title">フォルダ</div><div class="muted small">同名フォルダはパスで区別</div></div>
+        <div class="panel-head"><div class="panel-title">フォルダ</div><div data-slot="path-toggle"></div></div>
         <div class="target-list" data-slot="targets"></div>
       </aside>
     </div>
@@ -194,9 +195,21 @@ function hintsHtml(): string {
     .join("");
 }
 
+function targetName(t: Config["targets"][number]): string {
+  return t.name || t.path.split(/[\\/]/).filter(Boolean).pop() || t.path;
+}
+
+/** 振り分け先リストの見出しにある、パス表示の切り替えボタン */
+function pathToggleHtml(): string {
+  const c = store.config!.config;
+  const on = c.general.show_paths;
+  return `<button class="toggle-btn" data-action="toggle-paths" aria-pressed="${on}" title="フォルダのパスを${on ? "隠す" : "表示する"}（${esc(displayCombo(c.keys.toggle_paths))}）。同名のフォルダは常にパスを表示します">パス${on ? "を隠す" : "を表示"}</button>`;
+}
+
 function deleteRow(s: SessionView): string {
   const c = store.config!.config;
   const trash = c.general.delete_folder;
+  const showPath = c.general.show_paths;
   const detail = trash
     ? `${trash}\n削除フォルダへ移動します。完全に削除するのは終了時の確認後です`
     : "削除フォルダが未指定のため、ファイルは元の場所に置いたまま「削除予定」として記録します。完全に削除するのは終了時の確認後です（削除フォルダは設定の「一般」で指定できます）";
@@ -204,7 +217,7 @@ function deleteRow(s: SessionView): string {
       ${keycap(displayCombo(c.keys.delete))}
       <span class="target-text">
         <span class="target-name">削除</span>
-        <span class="target-path">${trash ? esc(sp(trash)) : "未指定（その場で削除予定に）"}</span>
+        ${showPath ? `<span class="target-path">${trash ? esc(sp(trash)) : "未指定（その場で削除予定に）"}</span>` : ""}
       </span>
       <span class="count" title="削除予定">${s.pendingDeletions || ""}</span>
     </button>`;
@@ -218,17 +231,21 @@ function targetsHtml(s: SessionView): string {
         <button class="btn btn-accent" data-action="settings">設定で振り分け先を登録</button>
       </div>${deleteRow(s)}`;
   }
+  // パスを隠していても、同じ名前の振り分け先があるものは区別できるようにパスを出す
+  const names = c.targets.map(targetName);
+  const duplicated = new Set(names.filter((n, i) => names.indexOf(n) !== i));
   const rows = c.targets
-    .map(
-      (t, i) => `<button class="target-row" data-action="move" data-target="${i}" title="${esc(t.path)}" ${s.current ? "" : "disabled"}>
+    .map((t, i) => {
+      const showPath = c.general.show_paths || duplicated.has(names[i]);
+      return `<button class="target-row" data-action="move" data-target="${i}" title="${esc(t.path)}" ${s.current ? "" : "disabled"}>
         ${keycap(displayCombo(t.key))}
         <span class="target-text">
-          <span class="target-name">${esc(t.name || t.path.split(/[\\/]/).pop())}</span>
-          <span class="target-path">${esc(sp(t.path))}</span>
+          <span class="target-name">${esc(names[i])}</span>
+          ${showPath ? `<span class="target-path">${esc(sp(t.path))}</span>` : ""}
         </span>
         <span class="count" title="今回移動した枚数">${s.movedCounts[i] || ""}</span>
-      </button>`,
-    )
+      </button>`;
+    })
     .join("");
   return rows + deleteRow(s);
 }
@@ -238,7 +255,7 @@ function chipsHtml(): string {
   return c.targets
     .map(
       (t, i) =>
-        `<button class="chip" data-action="move" data-target="${i}">${keycap(displayCombo(t.key))}<span>${esc(t.name || t.path.split(/[\\/]/).pop())}</span></button>`,
+        `<button class="chip" data-action="move" data-target="${i}" title="${esc(t.path)}">${keycap(displayCombo(t.key))}<span>${esc(targetName(t))}</span></button>`,
     )
     .join("");
 }
@@ -266,7 +283,11 @@ export function renderSorter(root: HTMLElement): void {
   const film = slot("filmstrip");
   if (film) film.innerHTML = filmstripHtml(s);
   slot("hints")!.innerHTML = skipChipHtml(s) + hintsHtml();
-  slot("targets")!.innerHTML = mode === "focus" ? chipsHtml() : targetsHtml(s);
+  const targets = slot("targets")!;
+  targets.innerHTML = mode === "focus" ? chipsHtml() : targetsHtml(s);
+  targets.classList.toggle("compact", !cfg.config.general.show_paths);
+  const pathToggle = slot("path-toggle");
+  if (pathToggle) pathToggle.innerHTML = pathToggleHtml();
   root.querySelectorAll<HTMLButtonElement>('[data-action="undo"]').forEach((b) => (b.disabled = !s.canUndo));
 }
 
@@ -285,6 +306,7 @@ export function handleSorterKey(combo: string, e: KeyboardEvent): boolean {
   if (combo === k.prev) return void actions.navigate(false), true;
   if (combo === k.next) return void actions.navigate(true), true;
   if (combo === k.toggle_view) return toggleMode(), true;
+  if (combo === k.toggle_paths) return void togglePaths(), true;
   if (combo === "Escape" && c.general.view_mode === "focus") return setMode("sidebar"), true;
   if (!s.current) return false;
   if (combo === k.skip) return void actions.perform({ kind: "skip" }), true;
@@ -306,6 +328,20 @@ export function setMode(mode: Mode): void {
 
 function toggleMode(): void {
   setMode(store.config?.config.general.view_mode === "focus" ? "sidebar" : "focus");
+}
+
+/** 振り分け先リストのパス表示を切り替える。その場で反映し、設定にも保存する（次回も同じ表示） */
+export async function togglePaths(): Promise<void> {
+  const cfg = store.config;
+  if (!cfg) return;
+  const show = !cfg.config.general.show_paths;
+  cfg.config.general.show_paths = show;
+  notify();
+  try {
+    store.config = await api.setShowPaths(show);
+  } catch (e) {
+    toast(errorText(e), "error");
+  }
 }
 
 // ---- サイドバーの幅 ----

@@ -58,6 +58,8 @@ pub struct General {
     pub prefetch: usize,
     /// 起動時に更新を確認する
     pub check_updates: bool,
+    /// 振り分け先リストにフォルダのパスを表示する（同名フォルダは非表示でもパスを出す）
+    pub show_paths: bool,
 }
 
 impl Default for General {
@@ -71,6 +73,7 @@ impl Default for General {
             accent: Accent::Amber,
             prefetch: 4,
             check_updates: true,
+            show_paths: true,
         }
     }
 }
@@ -86,6 +89,8 @@ pub struct ActionKeys {
     pub next: String,
     /// 表示モード（サイドバー／全画面）の切り替え
     pub toggle_view: String,
+    /// 振り分け先リストのパス表示の切り替え
+    pub toggle_paths: String,
 }
 
 impl Default for ActionKeys {
@@ -96,13 +101,15 @@ impl Default for ActionKeys {
             undo: "Ctrl+Z".into(),
             prev: "Left".into(),
             next: "Right".into(),
-            toggle_view: "F".into(),
+            // 単独キーは振り分けに使えるよう空けておき、表示の切り替えは組み合わせキーにする
+            toggle_view: "Ctrl+Shift+F".into(),
+            toggle_paths: "Ctrl+Shift+P".into(),
         }
     }
 }
 
 impl ActionKeys {
-    fn entries(&self) -> [(&'static str, &str); 6] {
+    fn entries(&self) -> [(&'static str, &str); 7] {
         [
             ("スキップ", &self.skip),
             ("削除", &self.delete),
@@ -110,11 +117,20 @@ impl ActionKeys {
             ("前の画像", &self.prev),
             ("次の画像", &self.next),
             ("表示モード切り替え", &self.toggle_view),
+            ("パス表示の切り替え", &self.toggle_paths),
         ]
     }
 
-    fn entries_mut(&mut self) -> [&mut String; 6] {
-        [&mut self.skip, &mut self.delete, &mut self.undo, &mut self.prev, &mut self.next, &mut self.toggle_view]
+    fn entries_mut(&mut self) -> [&mut String; 7] {
+        [
+            &mut self.skip,
+            &mut self.delete,
+            &mut self.undo,
+            &mut self.prev,
+            &mut self.next,
+            &mut self.toggle_view,
+            &mut self.toggle_paths,
+        ]
     }
 }
 
@@ -140,12 +156,33 @@ impl Target {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// 設定ファイルの形式のバージョン。既定値を変えたときの移行に使う
+pub const CONFIG_VERSION: u32 = 1;
+
+fn legacy_version() -> u32 {
+    0
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// 書いていない古いファイルは 0 として読み、[`Config::migrate`] で最新にそろえる
+    #[serde(default = "legacy_version")]
+    pub version: u32,
     pub general: General,
     pub keys: ActionKeys,
     pub targets: Vec<Target>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            version: CONFIG_VERSION,
+            general: General::default(),
+            keys: ActionKeys::default(),
+            targets: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -300,7 +337,22 @@ pub fn parse(text: &str, path: &Path) -> Result<Config, ConfigError> {
     let mut config: Config =
         toml::from_str(text).map_err(|e| ConfigError::Parse { path: path.to_path_buf(), message: e.to_string() })?;
     config.normalize();
+    config.migrate();
     Ok(config)
+}
+
+impl Config {
+    /// 古い形式の設定を最新にそろえる（次に保存したときにファイルへ反映される）
+    pub fn migrate(&mut self) {
+        if self.version < 1 {
+            // v0 の既定だった単独キー F は振り分けに使いたいので、組み合わせキーへ移す。
+            // 自分で別のキーに変えていた場合はそのまま
+            if self.keys.toggle_view == "F" {
+                self.keys.toggle_view = ActionKeys::default().toggle_view;
+            }
+        }
+        self.version = CONFIG_VERSION;
+    }
 }
 
 pub fn to_toml(config: &Config) -> String {
@@ -392,6 +444,24 @@ mod tests {
         assert_eq!(c.keys.undo, "Ctrl+Z");
         assert_eq!(c.targets[0].key, "Ctrl+Shift+1");
         assert_eq!(c.targets[0].display_name(), "風景");
+    }
+
+    #[test]
+    fn old_files_are_migrated_to_the_new_toggle_key() {
+        // v0（version なし）で既定のまま F になっている
+        let c = parse("[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.version, CONFIG_VERSION);
+        assert_eq!(c.keys.toggle_view, "Ctrl+Shift+F");
+        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+P", "新しい項目は既定値");
+        assert!(c.general.show_paths);
+
+        // 自分で変えていたキーはそのまま
+        let c = parse("[keys]\ntoggle_view = \"Alt+V\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.toggle_view, "Alt+V");
+
+        // 最新の形式で F を選んでいる場合は変えない
+        let c = parse("version = 1\n[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.toggle_view, "F");
     }
 
     #[test]

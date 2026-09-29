@@ -15,7 +15,7 @@ import {
   openSettings,
   renderSettings,
 } from "./views/settings";
-import { handleSorterKey, initSidebarResize, onModeChange, renderSorter, setMode } from "./views/sorter";
+import { handleSorterKey, initSidebarResize, onModeChange, renderSorter, setMode, togglePaths } from "./views/sorter";
 import { pickSource, renderStart, startFromForm } from "./views/start";
 import { checkForUpdates } from "./updater";
 
@@ -114,6 +114,8 @@ document.addEventListener("click", async (e) => {
         return void actions.resolveConflict(el.dataset.choice as never);
       case "mode":
         return setMode(el.dataset.mode as Config["general"]["view_mode"]);
+      case "toggle-paths":
+        return await togglePaths();
       case "settings":
         return openSettings();
       case "change-source":

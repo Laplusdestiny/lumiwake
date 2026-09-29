@@ -99,6 +99,13 @@ pub fn set_view_mode(state: State<'_, AppState>, mode: config::ViewMode) -> Conf
     config_payload(&state)
 }
 
+/// 振り分け先リストのパス表示の切り替え（次回の起動時も同じ表示にする）
+#[tauri::command]
+pub fn set_show_paths(state: State<'_, AppState>, show: bool) -> ConfigPayload {
+    remember(&state, |c| c.general.show_paths = show);
+    config_payload(&state)
+}
+
 #[tauri::command]
 pub fn open_config_file(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     app.opener().open_path(lossy(&state.config_path), None::<&str>).map_err(|e| e.to_string())

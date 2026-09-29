@@ -22,6 +22,7 @@ const ACTIONS: { name: keyof Config["keys"]; label: string }[] = [
   { name: "prev", label: "前の画像" },
   { name: "next", label: "次の画像" },
   { name: "toggle_view", label: "表示モードの切り替え" },
+  { name: "toggle_paths", label: "フォルダのパス表示の切り替え" },
 ];
 
 export function openSettings(sec?: Section): void {
@@ -245,6 +246,7 @@ function generalSection(d: Config): string {
         ${radio("view_mode", "sidebar", g.view_mode, "サイドバー型（プレビュー＋振り分け先リスト）")}
         ${radio("view_mode", "focus", g.view_mode, "全画面集中型")}
       </div>
+      <label class="check"><input type="checkbox" data-field="show_paths" ${g.show_paths ? "checked" : ""}> 振り分け先リストにフォルダのパスを表示する（同名のフォルダは常に表示）</label>
       <div class="radios accent-radios">
         ${(["amber", "blue", "green"] as const)
           .map(
@@ -466,6 +468,9 @@ export function handleSettingsInput(el: HTMLInputElement): void {
       return changed(false);
     case "check_updates":
       g.check_updates = el.checked;
+      return changed(false);
+    case "show_paths":
+      g.show_paths = el.checked;
       return changed(false);
     case "prefetch":
       g.prefetch = Math.max(0, Math.min(16, Number(el.value) || 0));

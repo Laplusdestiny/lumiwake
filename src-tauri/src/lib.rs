@@ -43,6 +43,7 @@ pub fn run() {
             commands::save_config,
             commands::reload_config,
             commands::set_view_mode,
+            commands::set_show_paths,
             commands::open_config_file,
             commands::open_location,
             commands::list_subfolders,

@@ -26,7 +26,8 @@ description: 画像を振り分ける基本の流れ
 | <kbd>Delete</kbd> | 削除（削除フォルダへ移動、または削除予定として記録） |
 | <kbd>←</kbd> / <kbd>→</kbd> | 前後の画像へ（処理済みの画像は飛ばす） |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | 取り消し（何段でも） |
-| <kbd>F</kbd> | サイドバー型 ⇔ 全画面型の切り替え |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | サイドバー型 ⇔ 全画面型の切り替え |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> | 振り分け先リストのパス表示の切り替え（リストの「パスを隠す」ボタンでも可） |
 | <kbd>Esc</kbd> | 全画面型を抜ける／ダイアログを閉じる |
 | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | 終了 |
 

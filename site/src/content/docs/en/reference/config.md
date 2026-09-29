@@ -24,6 +24,7 @@ view_mode = "sidebar"                      # "sidebar" / "focus"
 accent = "amber"                           # "amber" / "blue" / "green"
 prefetch = 4                               # images to preload (0–16)
 check_updates = true
+show_paths = true                          # show folder paths (same-name folders always show them)
 
 [keys]
 skip = "Space"
@@ -31,7 +32,8 @@ delete = "Delete"
 undo = "Ctrl+Z"
 prev = "Left"
 next = "Right"
-toggle_view = "F"
+toggle_view = "Ctrl+Shift+F"               # sidebar / full-screen
+toggle_paths = "Ctrl+Shift+P"              # show / hide folder paths
 
 [[targets]]
 key = "1"
