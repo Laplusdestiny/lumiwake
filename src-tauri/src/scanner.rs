@@ -30,8 +30,6 @@ pub struct ScanResult {
 pub enum ScanError {
     #[error("仕分け元フォルダが見つかりません: {0}")]
     NotFound(PathBuf),
-    #[error("仕分け元フォルダが振り分け先または削除フォルダと同じ（またはその中）です: {0}")]
-    RootExcluded(PathBuf),
     #[error("フォルダを読み込めませんでした: {0}")]
     Io(#[from] io::Error),
 }
@@ -43,10 +41,10 @@ pub fn scan(opts: &ScanOptions, is_supported: impl Fn(Format) -> bool) -> Result
         return Err(ScanError::NotFound(opts.root.clone()));
     }
     // 存在しない除外先は無視する（まだ作られていない振り分け先など）
-    let exclude: Vec<PathBuf> = opts.exclude.iter().filter_map(|p| dunce::canonicalize(p).ok()).collect();
-    if exclude.iter().any(|ex| root.starts_with(ex)) {
-        return Err(ScanError::RootExcluded(opts.root.clone()));
-    }
+    // 仕分け元そのものを含む除外先（仕分け元が振り分け先の中にある場合など）は除外に使わない。
+    // 仕分け元の中にある振り分け先・削除フォルダだけを走査から外す
+    let exclude: Vec<PathBuf> =
+        opts.exclude.iter().filter_map(|p| dunce::canonicalize(p).ok()).filter(|ex| !root.starts_with(ex)).collect();
 
     let mut result = ScanResult::default();
     let mut stack = vec![root.clone()];
@@ -226,19 +224,35 @@ mod tests {
     }
 
     #[test]
-    fn rejects_root_inside_excluded_folder() {
+    fn root_inside_a_target_folder_is_allowed() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("dest/inner")).unwrap();
-        let err = scan(
+        let root = dir.path().join("dest/inner");
+        touch(&root.join("a.jpg"));
+        touch(&root.join("sub/b.jpg"));
+        touch(&root.join("other-target/c.jpg"));
+        let r = scan(
             &ScanOptions {
-                root: dir.path().join("dest/inner"),
-                include_subdirs: false,
-                exclude: vec![dir.path().join("dest")],
+                root: root.clone(),
+                include_subdirs: true,
+                // dest は仕分け元を含むので除外に使わない。仕分け元の中の other-target は除外する
+                exclude: vec![dir.path().join("dest"), root.join("other-target")],
             },
             all_supported,
         )
-        .unwrap_err();
-        assert!(matches!(err, ScanError::RootExcluded(_)));
+        .unwrap();
+        assert_eq!(names(&r.images, &root), ["a.jpg", "sub/b.jpg"]);
+    }
+
+    #[test]
+    fn root_equal_to_a_target_folder_is_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(&dir.path().join("a.jpg"));
+        let r = scan(
+            &ScanOptions { root: dir.path().into(), include_subdirs: false, exclude: vec![dir.path().into()] },
+            all_supported,
+        )
+        .unwrap();
+        assert_eq!(names(&r.images, dir.path()), ["a.jpg"]);
     }
 
     #[test]

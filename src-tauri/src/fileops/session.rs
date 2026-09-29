@@ -218,6 +218,14 @@ impl Session {
                 if !dir.is_dir() {
                     return Err(FileOpError::TargetMissing(dir));
                 }
+                // 仕分け元が振り分け先と同じフォルダの場合、画像はすでにそこにある。
+                // 自分自身との衝突として扱わず、ファイルは動かさずに振り分け済みにする
+                if in_dir(&self.items[idx].path, &dir) {
+                    let to = self.items[idx].path.clone();
+                    self.push(idx, Status::Moved { to }, format!("→ {label}（移動なし）"), None, None);
+                    self.advance_from(idx);
+                    return Ok(Outcome::Done);
+                }
                 let dest = dir.join(file_name(&self.items[idx].path));
                 if self.fs.exists(&dest) {
                     let info =
@@ -482,6 +490,15 @@ impl Session {
     }
 }
 
+/// `path` がフォルダ `dir` の直下にあるか（表記ゆれを避けるため実体のパスで比べる）
+fn in_dir(path: &Path, dir: &Path) -> bool {
+    let Some(parent) = path.parent() else { return false };
+    match (dunce::canonicalize(parent), dunce::canonicalize(dir)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => parent == dir,
+    }
+}
+
 fn io_err(context: &'static str, path: &Path, source: std::io::Error) -> FileOpError {
     FileOpError::Io { context, path: path.to_path_buf(), source }
 }
@@ -660,6 +677,21 @@ mod tests {
         assert_eq!(read(&imgs[0]), "someone else's file");
         assert_eq!(read(&e.a.join("img1.jpg")), "image 1");
         assert!(s.can_undo(), "失敗した取り消しは履歴に残す");
+    }
+
+    #[test]
+    fn moving_into_the_folder_it_is_already_in_does_nothing() {
+        let (e, imgs) = env(2);
+        let mut s = session(imgs.clone(), None);
+        // 仕分け元（src）そのものを振り分け先に指定した
+        assert_eq!(s.apply(move_to(&e.src)).unwrap(), Outcome::Done, "自分自身との衝突にしない");
+        assert_eq!(read(&imgs[0]), "image 1");
+        assert_eq!(listing(&e.src), ["img1.jpg", "img2.jpg"], "コピーもリネームもしない");
+        assert_eq!(s.items()[0].status, Status::Moved { to: imgs[0].clone() });
+        assert_eq!(s.current(), Some(1));
+        s.undo().unwrap();
+        assert_eq!(s.items()[0].status, Status::Pending);
+        assert_eq!(listing(&e.src), ["img1.jpg", "img2.jpg"]);
     }
 
     #[test]
