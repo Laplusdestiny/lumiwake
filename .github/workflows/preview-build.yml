@@ -1,0 +1,41 @@
+# 試用のための Windows ビルド。PR と手動実行で .exe / .msi を作り、Actions の成果物（Artifacts）に置く。
+# 署名付きの更新ファイルは作らない（正式な配布は release.yml）。
+name: Preview build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows 試用ビルド
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: preview
+      - run: npm ci
+      - run: npx tauri build --bundles msi
+      - name: 成果物をまとめる
+        shell: bash
+        run: |
+          mkdir -p out
+          cp src-tauri/target/release/lumiwake.exe out/Lumiwake.exe
+          cp src-tauri/target/release/bundle/msi/*.msi out/
+          ls -la out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lumiwake-windows-${{ github.sha }}
+          path: out/
+          retention-days: 14
