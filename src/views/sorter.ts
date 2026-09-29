@@ -36,6 +36,7 @@ function sidebarSkeleton(): string {
         <div class="hints" data-slot="hints"></div>
       </main>
       <aside class="targets-panel">
+        <div class="resize-handle" data-resize title="ドラッグで幅を変更（ダブルクリックで元の幅に戻す）"></div>
         <div class="panel-head"><div class="panel-title">フォルダ</div><div class="muted small">同名フォルダはパスで区別</div></div>
         <div class="target-list" data-slot="targets"></div>
       </aside>
@@ -133,16 +134,41 @@ function updatePreview(slot: HTMLElement, s: SessionView): void {
   img.addEventListener("error", () => slot.classList.remove("loading"), { once: true });
 }
 
+/** フィルムストリップに出す直近の操作の数（Rust 側の HISTORY_TILES と同じ） */
+const HISTORY_TILES = 4;
+const UPCOMING_TILES = 3;
+
+function thumb(s: SessionView, index: number): string {
+  return `<img src="${lumiUrl(`thumb/${s.generation}/${index}`)}" alt="" loading="lazy">`;
+}
+
 function filmstripHtml(s: SessionView): string {
   const tiles: string[] = [];
-  const history = [...s.history].reverse();
-  for (const h of history) tiles.push(`<div class="tile tile-done" title="${esc(h.label)}">${esc(h.label)}</div>`);
-  for (let i = history.length; i < 3; i++) tiles.push(`<div class="tile tile-empty"></div>`);
-  if (s.current) {
-    tiles.push(`<div class="tile tile-current"><img src="${lumiUrl(`thumb/${s.generation}/${s.current.index}`)}" alt=""></div>`);
+  // 保留中の画像の数。クリックで保留中の画像へ移動する
+  if (s.skipped > 0) {
+    const target = s.nextSkipped;
+    tiles.push(
+      target != null
+        ? `<button class="skip-chip" data-action="jump" data-index="${target}" title="クリックで保留中の画像へ移動">保留<strong>${formatCount(s.skipped)}</strong>枚</button>`
+        : `<div class="skip-chip" title="保留中の画像">保留<strong>${formatCount(s.skipped)}</strong>枚</div>`,
+    );
   }
-  for (const i of s.upcoming) {
-    tiles.push(`<div class="tile"><img src="${lumiUrl(`thumb/${s.generation}/${i}`)}" alt="" loading="lazy"></div>`);
+  // 直近の操作（古い順）。保留した画像はクリックでその画像に戻って振り分け直せる
+  const history = [...s.history].reverse();
+  for (let i = history.length; i < HISTORY_TILES; i++) tiles.push(`<div class="tile tile-empty"></div>`);
+  for (const h of history) {
+    const label = `<span class="tile-label">${esc(h.label)}</span>`;
+    tiles.push(
+      h.open
+        ? `<button class="tile tile-hist tile-open" data-action="jump" data-index="${h.item}" title="${esc(h.label)}：クリックでこの画像に戻って振り分け直す">${thumb(s, h.item)}${label}</button>`
+        : `<div class="tile tile-hist kind-${h.kind}" title="${esc(h.label)}（${esc(displayCombo(store.config!.config.keys.undo))} で取り消し）">${thumb(s, h.item)}${label}</div>`,
+    );
+  }
+  if (s.current) {
+    tiles.push(`<div class="tile tile-current">${thumb(s, s.current.index)}</div>`);
+  }
+  for (const i of s.upcoming.slice(0, UPCOMING_TILES)) {
+    tiles.push(`<div class="tile">${thumb(s, i)}</div>`);
   }
   return tiles.join("");
 }
@@ -174,11 +200,14 @@ function hintsHtml(): string {
 function deleteRow(s: SessionView): string {
   const c = store.config!.config;
   const trash = c.general.delete_folder;
-  return `<button class="target-row delete-row" data-action="delete" ${s.current ? "" : "disabled"}>
+  const detail = trash
+    ? `${trash}\n削除フォルダへ移動します。完全に削除するのは終了時の確認後です`
+    : "削除フォルダが未指定のため、ファイルは元の場所に置いたまま「削除予定」として記録します。完全に削除するのは終了時の確認後です（削除フォルダは設定の「一般」で指定できます）";
+  return `<button class="target-row delete-row" data-action="delete" title="${esc(detail)}" ${s.current ? "" : "disabled"}>
       ${keycap(displayCombo(c.keys.delete))}
       <span class="target-text">
         <span class="target-name">削除</span>
-        <span class="target-path">${trash ? esc(sp(trash)) : "削除予定として記録（削除フォルダ未指定）"}</span>
+        <span class="target-path">${trash ? esc(sp(trash)) : "未指定（その場で削除予定に）"}</span>
       </span>
       <span class="count" title="削除予定">${s.pendingDeletions || ""}</span>
     </button>`;
@@ -194,11 +223,11 @@ function targetsHtml(s: SessionView): string {
   }
   const rows = c.targets
     .map(
-      (t, i) => `<button class="target-row" data-action="move" data-target="${i}" ${s.current ? "" : "disabled"}>
+      (t, i) => `<button class="target-row" data-action="move" data-target="${i}" title="${esc(t.path)}" ${s.current ? "" : "disabled"}>
         ${keycap(displayCombo(t.key))}
         <span class="target-text">
           <span class="target-name">${esc(t.name || t.path.split(/[\\/]/).pop())}</span>
-          <span class="target-path" title="${esc(t.path)}">${esc(sp(t.path))}</span>
+          <span class="target-path">${esc(sp(t.path))}</span>
         </span>
         <span class="count" title="今回移動した枚数">${s.movedCounts[i] || ""}</span>
       </button>`,
@@ -280,4 +309,70 @@ export function setMode(mode: Mode): void {
 
 function toggleMode(): void {
   setMode(store.config?.config.general.view_mode === "focus" ? "sidebar" : "focus");
+}
+
+// ---- サイドバーの幅 ----
+
+const SIDEBAR_KEY = "lumiwake.sidebarWidth";
+const SIDEBAR_DEFAULT = 360;
+const SIDEBAR_MIN = 240;
+/** プレビューに最低限残す幅 */
+const STAGE_MIN = 420;
+
+function clampSidebar(width: number): number {
+  return Math.round(Math.max(SIDEBAR_MIN, Math.min(width, window.innerWidth - STAGE_MIN)));
+}
+
+function applySidebarWidth(width: number): void {
+  document.documentElement.style.setProperty("--sidebar-w", `${clampSidebar(width)}px`);
+}
+
+function savedSidebarWidth(): number {
+  try {
+    return Number(localStorage.getItem(SIDEBAR_KEY)) || SIDEBAR_DEFAULT;
+  } catch {
+    return SIDEBAR_DEFAULT;
+  }
+}
+
+function saveSidebarWidth(width: number): void {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, String(width));
+  } catch {
+    // 保存できなくても今回の表示には影響しない
+  }
+}
+
+/** 右サイドバーの左端をドラッグして幅を変えられるようにする（幅は次回も使う） */
+export function initSidebarResize(): void {
+  let width = savedSidebarWidth();
+  applySidebarWidth(width);
+  window.addEventListener("resize", () => applySidebarWidth(width));
+
+  document.addEventListener("pointerdown", (e) => {
+    const handle = (e.target as HTMLElement).closest<HTMLElement>("[data-resize]");
+    if (!handle || e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+    const move = (ev: PointerEvent) => {
+      width = clampSidebar(window.innerWidth - ev.clientX);
+      applySidebarWidth(width);
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      document.body.classList.remove("resizing");
+      saveSidebarWidth(width);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    handle.addEventListener("pointercancel", up, { once: true });
+  });
+
+  document.addEventListener("dblclick", (e) => {
+    if (!(e.target as HTMLElement).closest("[data-resize]")) return;
+    width = SIDEBAR_DEFAULT;
+    applySidebarWidth(width);
+    saveSidebarWidth(width);
+  });
 }

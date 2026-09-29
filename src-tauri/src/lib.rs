@@ -53,6 +53,7 @@ pub fn run() {
             commands::cancel_conflict,
             commands::undo,
             commands::navigate,
+            commands::jump_to,
             commands::image_info,
             commands::pending_deletions,
             commands::finalize_and_exit,

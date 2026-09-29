@@ -4,7 +4,7 @@
 
 use crate::config::{self, Config, Issue};
 use crate::decoder::{self, FormatSupport};
-use crate::fileops::{self, Action, ConflictChoice, FinalizeReport, HistoryEntry, PendingDeletion, Session, Status};
+use crate::fileops::{self, Action, ConflictChoice, FinalizeReport, HistoryKind, PendingDeletion, Session, Status};
 use crate::scanner::{self, ScanOptions};
 use crate::state::{location, AppState, SessionState};
 use serde::{Deserialize, Serialize};
@@ -172,6 +172,17 @@ pub struct ConflictView {
     existing: FileView,
 }
 
+/// フィルムストリップに出す直近の操作
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryView {
+    item: usize,
+    label: String,
+    kind: HistoryKind,
+    /// まだ未処理（保留中）で、クリックして戻れるか
+    open: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionView {
@@ -184,7 +195,9 @@ pub struct SessionView {
     remaining: usize,
     skipped: usize,
     upcoming: Vec<usize>,
-    history: Vec<HistoryEntry>,
+    history: Vec<HistoryView>,
+    /// 次に見る保留中の画像（現在の画像を除く）
+    next_skipped: Option<usize>,
     can_undo: bool,
     pending_deletions: usize,
     /// 振り分け先ごとの、このセッションで移動した枚数（設定の targets と同じ並び）
@@ -192,6 +205,9 @@ pub struct SessionView {
     unsupported: Vec<String>,
     conflict: Option<ConflictView>,
 }
+
+/// フィルムストリップに出す直近の操作の数
+const HISTORY_TILES: usize = 4;
 
 fn session_view(state: &AppState, s: &SessionState) -> SessionView {
     let session = &s.session;
@@ -226,7 +242,17 @@ fn session_view(state: &AppState, s: &SessionState) -> SessionView {
         remaining,
         skipped,
         upcoming: session.upcoming(4),
-        history: session.recent_history(3),
+        history: session
+            .recent_history(HISTORY_TILES)
+            .into_iter()
+            .map(|h| HistoryView {
+                open: h.kind == HistoryKind::Skip && items[h.item].status == Status::Skipped,
+                item: h.item,
+                label: h.label,
+                kind: h.kind,
+            })
+            .collect(),
+        next_skipped: session.next_skipped(),
         can_undo: session.can_undo(),
         pending_deletions: session.pending_deletions().len()
             + state.retired().iter().map(|r| r.pending_deletions().len()).sum::<usize>(),
@@ -357,6 +383,19 @@ pub fn navigate(state: State<'_, AppState>, forward: bool) -> CmdResult<SessionV
             s.session.go_prev();
         }
         Ok(())
+    })
+    .map(|(_, v)| v)
+}
+
+/// 保留した画像などへ移動する（処理済みの画像には移動できない）
+#[tauri::command]
+pub fn jump_to(state: State<'_, AppState>, index: usize) -> CmdResult<SessionView> {
+    with_session(&state, |s| {
+        if s.session.go_to(index) {
+            Ok(())
+        } else {
+            Err("この画像はすでに振り分け済みです（Ctrl+Z で取り消せます）".into())
+        }
     })
     .map(|(_, v)| v)
 }

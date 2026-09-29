@@ -77,6 +77,11 @@ export function navigate(forward: boolean): Promise<void> {
   return enqueue(async () => setSession(await api.navigate(forward)));
 }
 
+/** 保留した画像などへ移動する */
+export function jumpTo(index: number): Promise<void> {
+  return enqueue(async () => setSession(await api.jumpTo(index)));
+}
+
 export async function startSession(source: string, includeSubdirs: boolean): Promise<void> {
   const view = await api.startSession(source, includeSubdirs);
   store.config = await api.getConfig();

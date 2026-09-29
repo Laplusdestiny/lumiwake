@@ -112,12 +112,22 @@ pub struct FinalizeReport {
     pub failed: Vec<(PathBuf, String)>,
 }
 
+/// 操作の種類（フィルムストリップの表示用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HistoryKind {
+    Move,
+    Skip,
+    Delete,
+}
+
 /// フィルムストリップ用の履歴の見え方
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryEntry {
     pub item: usize,
     pub label: String,
+    pub kind: HistoryKind,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -155,6 +165,7 @@ struct Entry {
     item: usize,
     prev_status: Status,
     label: String,
+    kind: HistoryKind,
     /// 画像を動かした先（取り消し時にここから元の場所へ戻す）
     moved_to: Option<PathBuf>,
     /// 上書きで退避した既存ファイル（取り消し時に元へ戻す）
@@ -301,7 +312,28 @@ impl Session {
 
     /// 新しい順に最大 `n` 件
     pub fn recent_history(&self, n: usize) -> Vec<HistoryEntry> {
-        self.history.iter().rev().take(n).map(|e| HistoryEntry { item: e.item, label: e.label.clone() }).collect()
+        self.history
+            .iter()
+            .rev()
+            .take(n)
+            .map(|e| HistoryEntry { item: e.item, label: e.label.clone(), kind: e.kind })
+            .collect()
+    }
+
+    /// 指定した未処理（保留を含む）画像へ移動する。処理済みの画像には移動できない
+    pub fn go_to(&mut self, idx: usize) -> bool {
+        if !self.items.get(idx).is_some_and(|i| i.status.is_open()) {
+            return false;
+        }
+        self.conflict = None;
+        self.cursor = idx;
+        true
+    }
+
+    /// 現在の画像を除いた保留中の画像のうち、次に見るもの（現在より後ろを優先し、なければ先頭から）
+    pub fn next_skipped(&self) -> Option<usize> {
+        let skipped = |i: &usize| *i != self.cursor && self.items[*i].status == Status::Skipped;
+        (self.cursor + 1..self.items.len()).find(skipped).or_else(|| (0..self.items.len()).find(skipped))
     }
 
     /// 前の未処理（保留を含む）画像へ
@@ -435,8 +467,13 @@ impl Session {
         moved_to: Option<PathBuf>,
         displaced: Option<Displaced>,
     ) {
+        let kind = match status {
+            Status::Skipped => HistoryKind::Skip,
+            Status::Trashed { .. } | Status::Marked { .. } => HistoryKind::Delete,
+            _ => HistoryKind::Move,
+        };
         let prev_status = std::mem::replace(&mut self.items[idx].status, status);
-        self.history.push(Entry { item: idx, prev_status, label, moved_to, displaced });
+        self.history.push(Entry { item: idx, prev_status, label, kind, moved_to, displaced });
     }
 
     /// `idx` より後ろの最初の未処理画像へ進む。なければ完了
@@ -786,6 +823,28 @@ mod tests {
         assert_eq!(s.current(), None, "最後の次は完了画面");
         assert!(s.go_prev());
         assert_eq!(s.current(), Some(3));
+    }
+
+    #[test]
+    fn go_to_jumps_only_to_open_items() {
+        let (e, imgs) = env(4);
+        let mut s = session(imgs, None);
+        s.apply(Action::Skip).unwrap(); // 0: 保留
+        s.apply(move_to(&e.a)).unwrap(); // 1: 移動
+        s.apply(Action::Skip).unwrap(); // 2: 保留
+        assert_eq!(s.current(), Some(3));
+        assert_eq!(s.next_skipped(), Some(0), "後ろになければ先頭から");
+        assert!(!s.go_to(1), "移動済みの画像には行けない");
+        assert!(!s.go_to(99));
+        assert!(s.go_to(0));
+        assert_eq!(s.current(), Some(0));
+        assert_eq!(s.next_skipped(), Some(2), "現在の画像は除き、後ろを優先");
+        // 保留した画像を改めて振り分けられる
+        s.apply(move_to(&e.b)).unwrap();
+        assert_eq!(s.items()[0].status, Status::Moved { to: e.b.join("img1.jpg") });
+        assert_eq!(s.current(), Some(2), "次の未処理（保留）へ進む");
+        let kinds: Vec<_> = s.recent_history(10).iter().map(|h| h.kind).collect();
+        assert_eq!(kinds, [HistoryKind::Move, HistoryKind::Skip, HistoryKind::Move, HistoryKind::Skip]);
     }
 
     #[test]

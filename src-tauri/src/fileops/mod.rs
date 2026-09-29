@@ -12,6 +12,6 @@ mod session;
 
 pub use fs::{safe_move, unique_path, Fs, RealFs};
 pub use session::{
-    file_name, Action, ConflictChoice, ConflictInfo, DeletionReason, FileOpError, FinalizeReport, HistoryEntry, Item,
-    Outcome, PendingDeletion, Session, Status,
+    file_name, Action, ConflictChoice, ConflictInfo, DeletionReason, FileOpError, FinalizeReport, HistoryEntry,
+    HistoryKind, Item, Outcome, PendingDeletion, Session, Status,
 };

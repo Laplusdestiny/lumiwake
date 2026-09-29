@@ -79,6 +79,9 @@ export interface ConflictView {
 export interface HistoryEntry {
   item: number;
   label: string;
+  kind: "move" | "skip" | "delete";
+  /** 保留中で、クリックして戻れる */
+  open: boolean;
 }
 
 export interface SessionView {
@@ -90,6 +93,8 @@ export interface SessionView {
   skipped: number;
   upcoming: number[];
   history: HistoryEntry[];
+  /** 次に見る保留中の画像（現在の画像を除く） */
+  nextSkipped: number | null;
   canUndo: boolean;
   pendingDeletions: number;
   movedCounts: number[];
@@ -143,6 +148,7 @@ export const api = {
   cancelConflict: () => invoke<SessionView>("cancel_conflict"),
   undo: () => invoke<ActionResult>("undo"),
   navigate: (forward: boolean) => invoke<SessionView>("navigate", { forward }),
+  jumpTo: (index: number) => invoke<SessionView>("jump_to", { index }),
   imageInfo: (generation: number, index: number) => invoke<ImageInfo>("image_info", { generation, index }),
   pendingDeletions: () => invoke<DeletionSummary>("pending_deletions"),
   finalizeAndExit: (del: boolean) => invoke<FinalizeReport>("finalize_and_exit", { delete: del }),

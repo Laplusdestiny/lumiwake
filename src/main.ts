@@ -15,7 +15,7 @@ import {
   openSettings,
   renderSettings,
 } from "./views/settings";
-import { handleSorterKey, onModeChange, renderSorter, setMode } from "./views/sorter";
+import { handleSorterKey, initSidebarResize, onModeChange, renderSorter, setMode } from "./views/sorter";
 import { pickSource, renderStart, startFromForm } from "./views/start";
 import { checkForUpdates } from "./updater";
 
@@ -40,6 +40,7 @@ function render(): void {
 }
 
 onChange(render);
+initSidebarResize();
 
 // 表示モードの切り替えは、その場で反映してから設定にも保存する（次回起動時も同じモード）
 onModeChange(async (mode: Config["general"]["view_mode"]) => {
@@ -107,6 +108,8 @@ document.addEventListener("click", async (e) => {
         return void actions.perform({ kind: "delete" });
       case "undo":
         return void actions.undo();
+      case "jump":
+        return void actions.jumpTo(Number(el.dataset.index));
       case "conflict":
         return void actions.resolveConflict(el.dataset.choice as never);
       case "mode":
