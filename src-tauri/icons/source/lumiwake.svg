@@ -5,5 +5,5 @@
 <rect x="42" y="30" width="46" height="58" rx="6" fill="#FFD66B"/>
 <rect x="48" y="36" width="34" height="32" rx="3" fill="#F4F1E8"/>
 <path d="M50 66 L60 54 L67 61 L71 57 L80 66 Z" fill="#1E2140"/>
-
+<path d="M104 18 L107 27 L116 30 L107 33 L104 42 L101 33 L92 30 L101 27 Z" fill="#F4F1E8"/>
 </svg>
