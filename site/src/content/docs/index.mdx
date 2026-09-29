@@ -1,0 +1,37 @@
+---
+title: Lumiwake
+description: キーボード操作で画像をすばやくフォルダへ振り分ける、軽量なデスクトップアプリ
+template: splash
+hero:
+  tagline: 画像を 1 枚ずつ表示し、キー 1 つで振り分け先のフォルダへ。数百枚の整理を、マウスに触れずにテンポよく。
+  actions:
+    - text: インストール
+      link: /lumiwake/guides/install/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/laplusdestiny/lumiwake
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+<CardGrid stagger>
+  <Card title="キー 1 つで振り分け" icon="rocket">
+    1〜9 などのキーにフォルダを割り当て、押すだけで移動。Ctrl / Shift / Alt との組み合わせで多数のフォルダを使えます。
+  </Card>
+  <Card title="押し間違えても戻せる" icon="approve-check">
+    Undo は何段でもさかのぼれます。削除キーはファイルを消さず、完全に削除するのはアプリ終了時の確認後だけです。
+  </Card>
+  <Card title="同名ファイルは並べて比較" icon="seti:image">
+    移動先に同じ名前のファイルがあれば両方を並べて表示。既存を残す／上書き／両方残す／スキップから選べます。
+  </Card>
+  <Card title="ローカルでも NAS でも" icon="laptop">
+    ローカルフォルダと SMB 共有の両方に対応。別ドライブ間の移動が途中で失敗しても、欠損や重複を残しません。
+  </Card>
+</CardGrid>
+
+## 対応環境
+
+- Windows / Linux（デスクトップ環境あり）
+- JPEG / PNG / WebP / GIF / BMP / TIFF / AVIF / HEIC（RAW・動画は対象外。Windows 版は現在 AVIF / HEIC 未対応）

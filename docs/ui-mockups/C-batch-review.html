@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>C. グリッド一括確認型</title>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&amp;family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0;background:#16171a}
+a{color:#e8a33d}a:hover{color:#f3bf6b}
+button{font-family:inherit}
+</style>
+<div style="width: 1280px; height: 800px; display: flex; flex-direction: column; background: #16171a; color: #ecebe6; font-family: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Noto Sans JP', sans-serif">
+  <header style="height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid #2c2e33">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <div style="font-size: 16px; font-weight: 700">一括確認</div>
+      <div style="font-size: 12px; color: #a3a29c">AI の提案をまとめて確認して移動します</div>
+    </div>
+    <div style="display: flex; gap: 4px; padding: 4px; background: #1f2125; border-radius: 8px">
+      <button style="height: 36px; padding: 0 14px; background: #34363c; border: 0; border-radius: 6px; color: #ecebe6; font-size: 13px; cursor: pointer">すべて 15</button>
+      <button style="height: 36px; padding: 0 14px; background: transparent; border: 0; border-radius: 6px; color: #a3a29c; font-size: 13px; cursor: pointer">高確信 11</button>
+      <button style="height: 36px; padding: 0 14px; background: transparent; border: 0; border-radius: 6px; color: #a3a29c; font-size: 13px; cursor: pointer">要確認 4</button>
+    </div>
+    <div style="flex-grow: 1"></div>
+    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #d6d5cf; cursor: pointer">
+      <input type="checkbox" checked style="width: 18px; height: 18px; accent-color: #e8a33d">
+      確信度 80% 以上を自動で選択
+    </label>
+  </header>
+  <div style="flex-grow: 1; min-height: 0; padding: 20px 24px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px">
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2041.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 風景</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">92%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2042.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 風景</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">88%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="false" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: none; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2043.jpg</div>
+          
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; border: 1px dashed #5a5d65; border-radius: 6px; font-size: 13px; color: #d6d5cf">
+              <span>要確認：人物？</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #a3a29c">47%</span>
+            </div>
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">Screenshot_0812.png</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ スクリーンショット</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">99%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2050.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 食べ物</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">85%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2051.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 食べ物</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">90%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">scan_003.png</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 書類</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">81%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2060.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ ペット</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">94%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="false" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: none; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2061.jpg</div>
+          
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; border: 1px dashed #5a5d65; border-radius: 6px; font-size: 13px; color: #d6d5cf">
+              <span>要確認：ペット？</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #a3a29c">62%</span>
+            </div>
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2072.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 旅行_2026</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">83%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">Screenshot_0815.png</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ スクリーンショット</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">97%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="false" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: none; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2080.jpg</div>
+          
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; border: 1px dashed #5a5d65; border-radius: 6px; font-size: 13px; color: #d6d5cf">
+              <span>要確認：人物？</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #a3a29c">55%</span>
+            </div>
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2081.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 人物</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">86%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="true" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: 2px solid #e8a33d; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+            <div style="position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 11px; background: #e8a33d; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16171a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2090.jpg</div>
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; background: #2b2d32; border-radius: 6px; font-size: 13px">
+              <span>→ 風景</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #e8a33d">91%</span>
+            </div>
+          
+          
+        </div>
+      </button>
+    
+      <button aria-pressed="false" style="display: flex; flex-direction: column; padding: 0; background: #1f2125; border: 1px solid #2c2e33; outline: none; outline-offset: 1px; border-radius: 10px; overflow: hidden; color: #ecebe6; text-align: left; cursor: pointer">
+        <div style="position: relative; width: 100%; height: 118px; background: #2b2d32">
+          
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px">
+          <div style="font-size: 12px; color: #a3a29c">IMG_2091.jpg</div>
+          
+          
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 26px; padding: 0 8px; border: 1px dashed #5a5d65; border-radius: 6px; font-size: 13px; color: #d6d5cf">
+              <span>要確認：後で見る？</span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #a3a29c">38%</span>
+            </div>
+          
+        </div>
+      </button>
+    
+  </div>
+  <footer style="height: 72px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-top: 1px solid #2c2e33; background: #1c1e22">
+    <div style="font-size: 14px"><span style="font-weight: 700">11 枚</span> を選択中</div>
+    <div style="font-size: 12px; color: #a3a29c">クリックで選択切り替え · 数字キーで提案先を上書き</div>
+    <div style="flex-grow: 1"></div>
+    <button style="height: 44px; padding: 0 18px; background: transparent; border: 1px solid #3a3d44; border-radius: 8px; color: #ecebe6; font-size: 14px; cursor: pointer">選択を解除</button>
+    <button style="height: 44px; padding: 0 20px; background: #e8a33d; border: 0; border-radius: 8px; color: #16171a; font-size: 14px; font-weight: 700; cursor: pointer">提案どおりに移動（11 枚）</button>
+  </footer>
+</div>
+
+</body>
+</html>

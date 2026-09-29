@@ -1,0 +1,82 @@
+# Release を手動で作成（公開）したときに、Windows・Linux 向けパッケージをビルドして添付する。
+# 自動アップデート用の署名付きファイルと latest.json も同じ Release に添付する。
+#
+# 必要なシークレット:
+#   TAURI_SIGNING_PRIVATE_KEY           updater の署名用秘密鍵（`npx tauri signer generate` で作成）
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  秘密鍵のパスワード（設定した場合）
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # HEIC/AVIF のライブラリ（libheif ≥ 1.17, libdav1d）が標準パッケージにある Ubuntu 24.04 でビルドする
+          - name: Linux (.deb / .AppImage)
+            os: ubuntu-24.04
+            args: --features avif,heic
+          # Windows 版の HEIC/AVIF 同梱は未対応（vcpkg での libheif / libdav1d の用意が必要）
+          - name: Windows (.msi)
+            os: windows-latest
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: タグとアプリのバージョンが一致しているか確認
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          tag="${{ github.event.release.tag_name }}"
+          if [ "v$version" != "$tag" ] && [ "$version" != "$tag" ]; then
+            echo "::error::Release のタグ ($tag) と tauri.conf.json の version ($version) が一致しません"
+            exit 1
+          fi
+
+      - name: 署名鍵が設定されているか確認
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::シークレット TAURI_SIGNING_PRIVATE_KEY が設定されていません（docs/release.md を参照）"
+            exit 1
+          fi
+
+      - name: Linux の依存ライブラリ
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libheif-dev libheif-plugin-libde265 libdav1d-dev
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ github.event.release.id }}
+          # 更新ファイルの生成はリリース時だけ有効にする（ローカルビルドでは署名鍵が不要なように）
+          args: --config src-tauri/tauri.release.conf.json ${{ matrix.args }}
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: false

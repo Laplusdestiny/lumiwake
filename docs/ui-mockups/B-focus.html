@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>B. フルスクリーン集中型</title>
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&amp;family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0;background:#0f1012}
+a{color:#e8a33d}a:hover{color:#f3bf6b}
+button{font-family:inherit}
+</style>
+<div style="width: 1280px; height: 800px; position: relative; overflow: hidden; background: #0f1012; color: #ecebe6; font-family: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Noto Sans JP', sans-serif">
+  <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #24262b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #a3a29c; font-size: 14px">
+    <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#6b6d74" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
+    <span>[画像プレビュー：全画面]</span>
+  </div>
+  <div style="position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; background: rgba(15, 16, 18, 0.82); border-radius: 8px">
+    <div style="font-size: 14px; font-weight: 500">IMG_2041.jpg</div>
+    <div style="font-size: 12px; color: #a3a29c">4032×3024 · 3.2 MB · 2026-08-14 撮影</div>
+  </div>
+  <div style="position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 10px">
+    <div style="height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: rgba(15, 16, 18, 0.82); border-radius: 8px; font-size: 13px; color: #d6d5cf">
+      <span>129 / 1,024</span>
+      <div style="width: 100px; height: 4px; background: #3a3d44; border-radius: 2px; overflow: hidden"><div style="width: 12.6%; height: 100%; background: #e8a33d"></div></div>
+    </div>
+    <button aria-label="画像情報" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: rgba(15, 16, 18, 0.82); border: 0; border-radius: 8px; color: #ecebe6; cursor: pointer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>
+    </button>
+    <button aria-label="全画面を終了" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: rgba(15, 16, 18, 0.82); border: 0; border-radius: 8px; color: #ecebe6; cursor: pointer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4"></path><path d="M15 4v5h5"></path><path d="M9 20v-5H4"></path><path d="M15 20v-5h5"></path></svg>
+    </button>
+  </div>
+  <div style="position: absolute; left: 0; right: 0; bottom: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px">
+    <div style="display: flex; gap: 12px; padding: 14px; background: rgba(15, 16, 18, 0.88); border: 1px solid #2c2e33; border-radius: 14px">
+      
+        <button style="width: 220px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #1f2125; border: 2px solid #e8a33d; border-radius: 10px; color: #ecebe6; text-align: left; cursor: pointer">
+          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 3px; border-radius: 7px; background: #2b2d32; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 16px">1</span>
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #a3a29c">92%</span>
+          </div>
+          <div style="font-size: 18px; font-weight: 700">風景</div>
+          <div style="font-size: 12px; color: #a3a29c">Enter でも確定</div>
+        </button>
+      
+        <button style="width: 220px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #1f2125; border: 2px solid #2c2e33; border-radius: 10px; color: #ecebe6; text-align: left; cursor: pointer">
+          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 3px; border-radius: 7px; background: #2b2d32; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 16px">4</span>
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #a3a29c">71%</span>
+          </div>
+          <div style="font-size: 18px; font-weight: 700">旅行_2026</div>
+          <div style="font-size: 12px; color: #a3a29c">同じ日付の画像 12 枚</div>
+        </button>
+      
+        <button style="width: 220px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #1f2125; border: 2px solid #2c2e33; border-radius: 10px; color: #ecebe6; text-align: left; cursor: pointer">
+          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%">
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 3px; border-radius: 7px; background: #2b2d32; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 16px">8</span>
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #a3a29c">18%</span>
+          </div>
+          <div style="font-size: 18px; font-weight: 700">後で見る</div>
+          <div style="font-size: 12px; color: #a3a29c">判断を保留</div>
+        </button>
+      
+      <button style="width: 150px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 14px; background: transparent; border: 1px dashed #4a4d55; border-radius: 10px; color: #ecebe6; text-align: left; cursor: pointer">
+        <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 36px; box-sizing: border-box; border: 1px solid #3a3d44; border-bottom-width: 3px; border-radius: 7px; background: #2b2d32; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px">Tab</span>
+        <span style="font-size: 14px; font-weight: 500">その他のフォルダ</span>
+      </button>
+    </div>
+    <div style="display: flex; gap: 18px; padding: 6px 12px; background: rgba(15, 16, 18, 0.7); border-radius: 6px; font-size: 12px; color: #d6d5cf">
+      <span>Enter 第1候補で確定</span>
+      <span>← → 前後</span>
+      <span>Space スキップ</span>
+      <span>Ctrl+Z 取り消し</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

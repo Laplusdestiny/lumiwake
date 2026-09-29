@@ -1,0 +1,11 @@
+/* アプリと同じアンバーをアクセントにする */
+:root {
+  --sl-color-accent-low: #3a2a10;
+  --sl-color-accent: #c98a2b;
+  --sl-color-accent-high: #f3d7a6;
+}
+:root[data-theme="light"] {
+  --sl-color-accent-low: #f6e3c4;
+  --sl-color-accent: #a86d12;
+  --sl-color-accent-high: #4a3108;
+}
