@@ -1183,3 +1183,169 @@ body.resizing * {
 .update-banner .icon-btn {
   border: 0;
 }
+
+/* ---- AI 候補 ---- */
+.ai-badge {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* 画像を外部へ送るときは、見落とさない色にする */
+.ai-badge.external {
+  border-color: #5a4a2e;
+  color: #f0c27a;
+}
+.suggest {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.suggest:empty {
+  display: none;
+}
+.sg-notice,
+.sg-band {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+}
+.sg-band {
+  border-color: #5a4a2e;
+  background: rgba(232, 166, 74, 0.08);
+  color: #f0c27a;
+}
+.sg-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+}
+.sg-link:hover {
+  color: var(--fg);
+}
+.sg-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  transition: opacity 0.15s;
+}
+.sg-cards.refreshing {
+  opacity: 0.55;
+}
+.sg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.sg-card:hover:not(:disabled) {
+  background: var(--surface);
+}
+.sg-card.level-high {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+.sg-card.sg-none {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+.sg-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sg-name {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+}
+.level-high .sg-name {
+  font-weight: 700;
+}
+.sg-score {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 19px;
+  color: var(--fg);
+}
+.level-high .sg-score {
+  color: var(--accent);
+}
+.sg-score small {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--muted);
+}
+.sg-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.sg-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.sg-bar span {
+  display: block;
+  height: 100%;
+  background: #6b7380;
+}
+.level-high .sg-bar span {
+  background: var(--accent);
+}
+/* 右のキー割り当て一覧: 候補になっている行を強調する */
+.target-row.suggested.level-mid {
+  background: rgba(255, 255, 255, 0.04);
+}
+.target-row.suggested.level-high {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.tag-unevaluated {
+  font-size: 11px;
+  color: #f0c27a;
+  white-space: nowrap;
+}
+.focus-bottom .suggest {
+  width: min(100%, 960px);
+}
+.focus-bottom .sg-card,
+.focus-bottom .sg-notice,
+.focus-bottom .sg-band {
+  background: rgba(28, 30, 34, 0.92);
+}

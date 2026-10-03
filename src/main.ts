@@ -106,6 +106,10 @@ document.addEventListener("click", async (e) => {
         return void actions.perform({ kind: "move", target: Number(el.dataset.target) });
       case "delete":
         return void actions.perform({ kind: "delete" });
+      case "skip":
+        return void actions.perform({ kind: "skip" });
+      case "rediagnose":
+        return actions.rediagnose();
       case "undo":
         return void actions.undo();
       case "jump":
