@@ -262,3 +262,301 @@ mod tests {
         assert_eq!(error_message(br#"{"errors":[]}"#), None);
     }
 }
+
+// ---- 通信と Suggester ----
+
+use super::image_prep::prepare_jpeg;
+use super::{SuggestError, SuggestRequest, Suggester};
+use crate::config::ai::AiBackend;
+use std::sync::Arc;
+use std::time::Duration;
+
+/// 画像つきのリクエストは 13〜30 秒かかるという報告があるため、余裕をもたせる
+const TIMEOUT: Duration = Duration::from_secs(90);
+
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: Vec<u8>,
+}
+
+/// HTTP の送受信。テストでは差し替えて、実際の通信を行わない
+pub trait Transport: Send + Sync {
+    fn post_json(&self, url: &str, bearer: &str, body: &[u8]) -> Result<HttpResponse, String>;
+}
+
+pub struct UreqTransport;
+
+impl Transport for UreqTransport {
+    fn post_json(&self, url: &str, bearer: &str, body: &[u8]) -> Result<HttpResponse, String> {
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(TIMEOUT))
+            // 4xx/5xx も応答として受け取り、こちらで理由を読む
+            .http_status_as_error(false)
+            .build();
+        let agent: ureq::Agent = config.into();
+        let mut resp = agent
+            .post(url)
+            .header("Authorization", &format!("Bearer {bearer}"))
+            .header("Content-Type", "application/json")
+            .send(body)
+            .map_err(|e| e.to_string())?;
+        let status = resp.status().as_u16();
+        let body = resp.body_mut().read_to_vec().map_err(|e| e.to_string())?;
+        Ok(HttpResponse { status, body })
+    }
+}
+
+/// API キーを読む場所。設定ファイルには書かず、環境変数から読む
+pub type KeySource = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
+pub fn env_key_source() -> KeySource {
+    Arc::new(|name| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()))
+}
+
+pub struct SystemOneSuggester {
+    cfg: AiSystemOne,
+    transport: Arc<dyn Transport>,
+    key: KeySource,
+}
+
+impl SystemOneSuggester {
+    pub fn new(cfg: AiSystemOne) -> Self {
+        Self::with(cfg, Arc::new(UreqTransport), env_key_source())
+    }
+
+    pub fn with(cfg: AiSystemOne, transport: Arc<dyn Transport>, key: KeySource) -> Self {
+        SystemOneSuggester { cfg, transport, key }
+    }
+}
+
+/// HTTP ステータスから、画面に出す理由を作る（API キーや画像は含めない）
+fn describe_failure(status: u16, body: &[u8]) -> String {
+    let detail = error_message(body).map(|m| format!("（{m}）")).unwrap_or_default();
+    match status {
+        401 | 403 => format!("API キーが無効か、権限がありません{detail}"),
+        400 | 422 => format!("リクエストが受け付けられませんでした{detail}"),
+        404 => format!("エンドポイントが見つかりません。アカウント ID とモデル名を確認してください{detail}"),
+        429 => format!("リクエストが多すぎます。しばらく待ってから再診断してください{detail}"),
+        s if s >= 500 => format!("サーバー側のエラーです（{s}）{detail}"),
+        s => format!("想定外の応答です（{s}）{detail}"),
+    }
+}
+
+impl Suggester for SystemOneSuggester {
+    fn backend(&self) -> AiBackend {
+        AiBackend::Systemone
+    }
+
+    fn model(&self) -> String {
+        resolve_model(&self.cfg).unwrap_or_default()
+    }
+
+    fn suggest(&self, req: &SuggestRequest) -> Result<Suggestion, SuggestError> {
+        // 画像を読んだり送ったりする前に、送れない理由をすべて確かめる
+        let model = resolve_model(&self.cfg).map_err(SuggestError::Unavailable)?;
+        check_endpoint(&self.cfg.endpoint).map_err(SuggestError::Unavailable)?;
+        let key = (self.key)(&self.cfg.api_key_env).ok_or_else(|| {
+            SuggestError::Unavailable(format!("環境変数 {} に API キーが設定されていません", self.cfg.api_key_env))
+        })?;
+
+        let jpeg = prepare_jpeg(req.image, self.cfg.max_image_kb).map_err(SuggestError::Failed)?;
+        let request = build_request(&model, req.choices, &jpeg).map_err(SuggestError::Failed)?;
+        let body = serde_json::to_vec(&request.body).map_err(|e| SuggestError::Failed(e.to_string()))?;
+
+        let resp = self
+            .transport
+            .post_json(&self.cfg.endpoint, &key, &body)
+            .map_err(|e| SuggestError::Failed(format!("通信に失敗しました: {e}")))?;
+        if resp.status != 200 {
+            return Err(SuggestError::Failed(describe_failure(resp.status, &resp.body)));
+        }
+        parse_response(&resp.body, &request.options).map_err(SuggestError::Failed)
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use image::DynamicImage;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Mutex;
+
+    /// 呼び出しを記録して、決めた応答を返す
+    struct Mock {
+        calls: Mutex<Vec<(String, String, Vec<u8>)>>,
+        reply: Result<(u16, Vec<u8>), String>,
+    }
+
+    impl Mock {
+        fn new(reply: Result<(u16, Vec<u8>), String>) -> Arc<Self> {
+            Arc::new(Mock { calls: Mutex::new(Vec::new()), reply })
+        }
+        fn count(&self) -> usize {
+            self.calls.lock().unwrap().len()
+        }
+    }
+
+    impl Transport for Mock {
+        fn post_json(&self, url: &str, bearer: &str, body: &[u8]) -> Result<HttpResponse, String> {
+            self.calls.lock().unwrap().push((url.into(), bearer.into(), body.to_vec()));
+            self.reply.clone().map(|(status, body)| HttpResponse { status, body })
+        }
+    }
+
+    const EP: &str = "https://api.cloudflare.com/client/v4/accounts/abc/ai/run/@cf/cloudflare/clef-flash";
+
+    fn suggester(ep: &str, mock: &Arc<Mock>, key: Option<&'static str>) -> SystemOneSuggester {
+        let cfg = AiSystemOne { endpoint: ep.into(), ..AiSystemOne::default() };
+        SystemOneSuggester::with(cfg, mock.clone(), Arc::new(move |_| key.map(String::from)))
+    }
+
+    fn choices() -> Vec<Choice> {
+        vec![
+            Choice { id: "/p/a".into(), label: "a".into(), description: String::new() },
+            Choice { id: "/p/b".into(), label: "b".into(), description: String::new() },
+        ]
+    }
+
+    fn run(s: &SystemOneSuggester) -> Result<Suggestion, SuggestError> {
+        let img = DynamicImage::new_rgb8(32, 32);
+        s.suggest(&SuggestRequest { image_hash: "h", image: &img, choices: &choices() })
+    }
+
+    fn ok_body() -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "model": "clef-flash",
+            "answers": { "dest": { "type": "choice", "choice": "f1", "confidence": 0.8,
+                "probabilities": { "f0": 0.1, "f1": 0.8, "none": 0.1 } } },
+            "usage": { "input_tokens": 1, "output_tokens": 1 }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_successful_call_sends_the_key_as_bearer_and_returns_probabilities() {
+        let mock = Mock::new(Ok((200, ok_body())));
+        let s = run(&suggester(EP, &mock, Some("secret-token"))).unwrap();
+        assert_eq!(s.scores[1], Scored { id: "/p/b".into(), score: 0.8 });
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, EP);
+        assert_eq!(calls[0].1, "secret-token");
+        let body: Value = serde_json::from_slice(&calls[0].2).unwrap();
+        assert_eq!(body["model"], "clef-flash");
+        assert!(!String::from_utf8_lossy(&calls[0].2).contains("secret-token"), "キーは本文に入れない");
+    }
+
+    #[test]
+    fn nothing_is_sent_when_it_cannot_be_sent() {
+        let mock = Mock::new(Ok((200, ok_body())));
+        // キー未設定
+        let e = run(&suggester(EP, &mock, None)).unwrap_err();
+        assert!(matches!(&e, SuggestError::Unavailable(m) if m.contains("LUMIWAKE_SYSTEMONE_KEY")), "{e}");
+        // {account} の置き換え忘れ
+        let tpl = AiSystemOne::default().endpoint;
+        assert!(matches!(run(&suggester(&tpl, &mock, Some("k"))), Err(SuggestError::Unavailable(_))));
+        // モデルを判別できないエンドポイント
+        assert!(matches!(
+            run(&suggester("https://example.com/x", &mock, Some("k"))),
+            Err(SuggestError::Unavailable(_))
+        ));
+        // 暗号化されていない通信先
+        assert!(matches!(
+            run(&suggester("http://example.com/clef", &mock, Some("k"))),
+            Err(SuggestError::Unavailable(_))
+        ));
+        assert_eq!(mock.count(), 0, "どの場合もリクエストは出ていない");
+    }
+
+    #[test]
+    fn an_image_that_cannot_be_shrunk_enough_is_not_sent() {
+        let mock = Mock::new(Ok((200, ok_body())));
+        // どこまで縮小しても 1KB には収まらない、ノイズの多い画像
+        let cfg = AiSystemOne { endpoint: EP.into(), max_image_kb: 1, ..AiSystemOne::default() };
+        let s = SystemOneSuggester::with(cfg, mock.clone(), Arc::new(|_| Some("k".into())));
+        let mut state = 7u32;
+        let noise = image::RgbImage::from_fn(300, 300, |_, _| {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            image::Rgb([(state >> 8) as u8, (state >> 16) as u8, (state >> 24) as u8])
+        });
+        let img = DynamicImage::ImageRgb8(noise);
+        let e = s.suggest(&SuggestRequest { image_hash: "h", image: &img, choices: &choices() }).unwrap_err();
+        assert!(matches!(e, SuggestError::Failed(_)));
+        assert_eq!(mock.count(), 0, "上限を超える画像は送らない");
+    }
+
+    #[test]
+    fn http_failures_are_explained_without_leaking_the_key() {
+        let cases = [
+            (401, "API キー"),
+            (403, "API キー"),
+            (400, "受け付けられません"),
+            (404, "エンドポイント"),
+            (429, "多すぎます"),
+            (503, "サーバー"),
+        ];
+        for (status, expect) in cases {
+            let body = serde_json::to_vec(&json!({"errors":[{"message":"Authentication error"}]})).unwrap();
+            let mock = Mock::new(Ok((status, body)));
+            let e = run(&suggester(EP, &mock, Some("secret-token"))).unwrap_err().to_string();
+            assert!(e.contains(expect), "{status}: {e}");
+            assert!(!e.contains("secret-token"), "{status}: {e}");
+        }
+    }
+
+    #[test]
+    fn network_errors_and_bad_bodies_are_failures_not_panics() {
+        let mock = Mock::new(Err("connection refused".into()));
+        assert!(
+            matches!(run(&suggester(EP, &mock, Some("k"))), Err(SuggestError::Failed(m)) if m.contains("通信に失敗"))
+        );
+        let mock = Mock::new(Ok((200, b"<html>".to_vec())));
+        assert!(matches!(run(&suggester(EP, &mock, Some("k"))), Err(SuggestError::Failed(_))));
+    }
+
+    #[test]
+    fn ureq_transport_posts_json_with_bearer_to_a_local_server() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = vec![0u8; 8192];
+            let mut got = Vec::new();
+            // ヘッダーと本文（Content-Length 分）を読み切る
+            loop {
+                let n = sock.read(&mut buf).unwrap();
+                got.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&got).to_string();
+                if let Some(h) = text.find("\r\n\r\n") {
+                    let len = text[..h]
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    if got.len() >= h + 4 + len {
+                        break;
+                    }
+                }
+                if n == 0 {
+                    break;
+                }
+            }
+            let reply = br#"{"ok":true}"#;
+            write!(sock, "HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", reply.len()).unwrap();
+            sock.write_all(reply).unwrap();
+            String::from_utf8_lossy(&got).to_string()
+        });
+        let resp = UreqTransport.post_json(&format!("http://127.0.0.1:{port}/run"), "tok", br#"{"a":1}"#).unwrap();
+        assert_eq!(resp.status, 429, "4xx も応答として受け取る");
+        assert_eq!(resp.body, br#"{"ok":true}"#);
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /run "), "{request}");
+        assert!(request.to_ascii_lowercase().contains("authorization: bearer tok"));
+        assert!(request.to_ascii_lowercase().contains("content-type: application/json"));
+        assert!(request.ends_with(r#"{"a":1}"#));
+    }
+}
