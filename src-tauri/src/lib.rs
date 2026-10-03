@@ -6,6 +6,7 @@ pub mod format;
 pub mod protocol;
 pub mod scanner;
 pub mod state;
+pub mod suggest;
 
 use state::AppState;
 use std::sync::atomic::Ordering;
