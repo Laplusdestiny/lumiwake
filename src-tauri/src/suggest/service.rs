@@ -154,6 +154,11 @@ impl SuggestionService {
         lock(&self.store).undo_outcome(image_hash, destination).map_err(failed)
     }
 
+    /// 振り分け先へ実際に振り分けられた画像のハッシュ（local の knn の手本）
+    pub fn outcome_hashes(&self, destination: &str) -> Result<Vec<String>, SuggestError> {
+        lock(&self.store).outcome_hashes(destination).map_err(failed)
+    }
+
     /// このバックエンドが画像を外部へ送るか（画面の「外部送信中」表示に使う）
     pub fn sends_images(&self) -> bool {
         sends_images(self.backend())
