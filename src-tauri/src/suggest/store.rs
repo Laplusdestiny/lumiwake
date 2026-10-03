@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS diagnoses (
 );
 CREATE INDEX IF NOT EXISTS idx_diag_hash ON diagnoses(image_hash, backend, is_latest);
 
+-- local 用: 画像の埋め込みベクトル（振り分け先を追加したとき、画像を読み直さずその場で採点し直せる）
+CREATE TABLE IF NOT EXISTS embeddings (
+  image_hash TEXT NOT NULL,
+  model      TEXT NOT NULL,
+  vector     BLOB NOT NULL,
+  PRIMARY KEY (image_hash, model)
+);
+
 -- ユーザーが最終的に振り分けた先（knn の手本・的中率表示に使う）。Undo されたら取り消す
 CREATE TABLE IF NOT EXISTS outcomes (
   image_hash   TEXT NOT NULL,
@@ -146,6 +154,28 @@ impl Store {
             params![image_hash, destination],
         )?;
         Ok(n > 0)
+    }
+
+    /// 画像の埋め込みベクトルを保存する（同じ画像・モデルなら置き換える）
+    pub fn put_embedding(&self, image_hash: &str, model: &str, vector: &[f32]) -> Result<()> {
+        let bytes: Vec<u8> = vector.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO embeddings (image_hash, model, vector) VALUES (?1, ?2, ?3)",
+            params![image_hash, model, bytes],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_embedding(&self, image_hash: &str, model: &str) -> Result<Option<Vec<f32>>> {
+        let bytes: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT vector FROM embeddings WHERE image_hash = ?1 AND model = ?2",
+                params![image_hash, model],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(bytes.map(|b| b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()))
     }
 
     /// 振り分け先へ実際に振り分けられた画像のハッシュ（重複なし、記録の古い順）
@@ -295,6 +325,19 @@ mod tests {
         s.record_outcome("dup", "/p/a", "t4").unwrap();
         assert!(s.undo_outcome("dup", "/p/a").unwrap());
         assert_eq!(s.outcome_hashes("/p/a").unwrap(), ["dup"]);
+    }
+
+    #[test]
+    fn embeddings_roundtrip_exactly_and_are_keyed_by_model() {
+        let s = Store::open_in_memory().unwrap();
+        let v = vec![0.25_f32, -1.5, 3.0e-8, f32::MAX];
+        assert_eq!(s.get_embedding("h", "clip").unwrap(), None);
+        s.put_embedding("h", "clip", &v).unwrap();
+        assert_eq!(s.get_embedding("h", "clip").unwrap(), Some(v.clone()));
+        assert_eq!(s.get_embedding("h", "other-model").unwrap(), None, "モデルが違えば別物");
+
+        s.put_embedding("h", "clip", &[1.0]).unwrap();
+        assert_eq!(s.get_embedding("h", "clip").unwrap(), Some(vec![1.0]), "同じキーは置き換える");
     }
 
     #[test]
