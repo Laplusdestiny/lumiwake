@@ -285,7 +285,12 @@ function suggestHtml(s: SessionView): string {
 
   const notice = noticeText(v);
   if (notice) {
-    return `<div class="sg-notice"><span>${esc(notice)}</span><span class="grow"></span><button class="sg-link" data-action="rediagnose">${keycap(rediagnose)} 再診断</button></div>`;
+    // 再診断で直る可能性があるのは失敗したときだけ（未同意・未導入は設定を変えるまで使えない）
+    const retry =
+      v?.state === "failed"
+        ? `<span class="grow"></span><button class="sg-link" data-action="rediagnose">${keycap(rediagnose)} 再診断</button>`
+        : "";
+    return `<div class="sg-notice"><span>${esc(notice)}</span>${retry}</div>`;
   }
   if (!v || v.state !== "ready") {
     return `<div class="sg-notice muted">候補を調べています…</div>`;
