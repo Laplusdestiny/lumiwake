@@ -4,9 +4,11 @@ import { api, errorText, type Config, type Issue } from "../api";
 import { displayCombo } from "../keys";
 import { notify, store } from "../store";
 import { toast } from "../toast";
+import * as actions from "../actions";
+import { consentMessage, parseIntIn, parseUnit } from "../suggest";
 import { baseName, esc, icons, keycap, shortPath } from "../util";
 
-type Section = "general" | "keys" | "formats" | "file";
+type Section = "general" | "keys" | "ai" | "formats" | "file";
 type Capture = { kind: "target"; index: number } | { kind: "action"; name: keyof Config["keys"] } | null;
 
 let draft: Config | null = null;
@@ -53,6 +55,9 @@ export async function closeSettings(): Promise<void> {
   capture = null;
   dirty = false;
   store.screen = store.session ? "sort" : "start";
+  // AI 設定を変えた可能性があるので、表示中の画像の候補を取り直す
+  const cur = store.session?.current;
+  if (store.session && cur) actions.loadSuggestions(store.session.generation, cur.index, false);
   notify();
 }
 
@@ -268,6 +273,101 @@ function generalSection(d: Config): string {
     </section>`;
 }
 
+function numField(field: string, value: number, min: number, max: number, step: number, label: string): string {
+  return `<label class="inline-field">${label} <input class="input input-num" type="number" min="${min}" max="${max}" step="${step}" data-field="${field}" value="${value}"></label>`;
+}
+
+let keyStatus: { envName: string; detected: boolean } | null = null;
+let connection: { state: "idle" | "testing" | "ok" | "error"; text: string } = { state: "idle", text: "" };
+
+async function refreshKeyStatus(): Promise<void> {
+  try {
+    keyStatus = await api.aiKeyStatus();
+  } catch {
+    keyStatus = null;
+  }
+  if (store.screen === "settings" && section === "ai") notify();
+}
+
+function aiSection(d: Config): string {
+  const ai = d.ai;
+  const targets = d.targets
+    .map(
+      (t, i) => `<div class="ai-target">
+        <span class="ai-target-name" title="${esc(t.path)}">${esc(t.name || baseName(t.path))}</span>
+        <input class="input" data-field="target-desc" data-index="${i}" value="${esc(t.description ?? "")}" placeholder="何を入れるフォルダか（例：旅行先の風景写真）" aria-label="説明文">
+        <label class="check ai-target-ext" title="System One（外部 API）へ、このフォルダ名・説明文・選択肢を送りません"><input type="checkbox" data-field="target-exclude" data-index="${i}" ${t.exclude_external ? "checked" : ""}> 外部に送らない</label>
+      </div>`,
+    )
+    .join("");
+  const s1 = ai.systemone;
+  const keyLine = keyStatus
+    ? keyStatus.detected
+      ? `<span class="ok small">環境変数 ${esc(keyStatus.envName)} を検出しました</span>`
+      : `<span class="warn small">環境変数 ${esc(keyStatus.envName)} が見つかりません</span>`
+    : `<span class="muted small">確認中…</span>`;
+  const conn =
+    connection.state === "idle"
+      ? ""
+      : `<span class="small ${connection.state === "ok" ? "ok" : connection.state === "error" ? "danger" : "muted"}">${esc(connection.text)}</span>`;
+  return `
+    <section>
+      <h1>AI 候補</h1>
+      <p class="muted">表示中の画像に対して、振り分け先の候補を提示します。最終的な振り分けは、いつもどおりあなたのキー操作で行います（AI が自動でファイルを動かすことはありません）。</p>
+      <div class="radios">
+        ${radio("ai_backend", "local", ai.backend, "ローカル（端末上で実行。画像は外へ送られません）")}
+        ${radio("ai_backend", "systemone", ai.backend, "System One 互換 API（画像を縮小して外部へ送信）")}
+        ${radio("ai_backend", "off", ai.backend, "使わない")}
+      </div>
+    </section>
+    <section>
+      <h2>共通</h2>
+      ${numField("ai_top_k", ai.top_k, 1, 10, 1, "候補の数")}
+      ${numField("ai_prefetch", ai.prefetch, 0, 16, 1, "先読みする枚数")}
+    </section>
+    <section>
+      <h2>ローカル</h2>
+      <p class="muted small">スコアは較正された確率ではないため、画面では「一致度」と表記します。モデルの導入は今後対応します（未導入の間は候補が出ません）。</p>
+      <label class="inline-field">モデル <input class="input" data-field="ai_local_model" value="${esc(ai.local.model)}"></label>
+      <div class="radios">
+        ${radio("ai_local_strategy", "zeroshot", ai.local.strategy, "フォルダ名・説明文だけで判定")}
+        ${radio("ai_local_strategy", "knn", ai.local.strategy, "振り分け済みの画像との類似度で判定")}
+        ${radio("ai_local_strategy", "hybrid", ai.local.strategy, "両方を組み合わせる（おすすめ）")}
+      </div>
+      ${numField("ai_local_high", ai.local.high, 0, 1, 0.05, "強調表示のしきい値（高）")}
+      ${numField("ai_local_low", ai.local.low, 0, 1, 0.05, "表示するしきい値（低）")}
+    </section>
+    <section>
+      <h2>System One 互換 API</h2>
+      <p class="muted small">有効にすると、画像を縮小・再圧縮して下のエンドポイントへ送信します。API キーは設定ファイルには書かず、環境変数から読みます。</p>
+      <label class="inline-field wide">エンドポイント <input class="input" data-field="ai_s1_endpoint" value="${esc(s1.endpoint)}" spellcheck="false"></label>
+      <p class="muted small">{account} は Cloudflare のアカウント ID に置き換えてください。末尾の clef / clef-flash からモデルを判別します。</p>
+      <label class="inline-field">API キーの環境変数名 <input class="input" data-field="ai_s1_env" value="${esc(s1.api_key_env)}" spellcheck="false"></label>
+      <div class="row gap">${keyLine}<button class="btn btn-sm btn-ghost" data-action="ai-recheck-key">再確認</button></div>
+      ${numField("ai_s1_kb", s1.max_image_kb, 16, 4096, 10, "送信する画像の上限（KB）")}
+      ${numField("ai_s1_high", s1.high, 0, 1, 0.05, "強調表示のしきい値（高）")}
+      ${numField("ai_s1_low", s1.low, 0, 1, 0.05, "表示するしきい値（低）")}
+      <div class="row gap">
+        <button class="btn" data-action="ai-test" ${connection.state === "testing" ? "disabled" : ""}>接続テスト</button>
+        ${conn}
+      </div>
+      <p class="muted small">接続テストは保存済みの設定で、合成した小さな画像だけを 1 回送ります（あなたの画像は送りません）。</p>
+      <div class="row gap consent ${s1.external_consent ? "given" : ""}">
+        <span>外部送信への同意：<strong>${s1.external_consent ? "同意済み" : "未同意"}</strong></span>
+        ${
+          s1.external_consent
+            ? `<button class="btn btn-sm" data-action="ai-revoke-consent">同意を取り消す</button>`
+            : `<span class="muted small">System One を選ぶと、確認のうえ同意できます</span>`
+        }
+      </div>
+    </section>
+    <section>
+      <h2>振り分け先ごとの設定</h2>
+      <p class="muted small">説明文は、フォルダ名だけでは伝わらない「何を入れるフォルダか」を書くと判定の助けになります。「外部に送らない」にしたフォルダは、System One へ送る選択肢に含まれません。</p>
+      <div class="ai-targets">${targets || `<div class="empty muted">振り分け先はまだありません。</div>`}</div>
+    </section>`;
+}
+
 function formatsSection(): string {
   const formats = store.config?.formats ?? [];
   return `
@@ -329,7 +429,15 @@ export function renderSettings(root: HTMLElement): void {
   const nav = (s: Section, label: string) =>
     `<button class="nav-item ${section === s ? "active" : ""}" data-action="section" data-section="${s}">${label}</button>`;
   const body =
-    section === "general" ? generalSection(draft) : section === "keys" ? keysSection(draft) : section === "formats" ? formatsSection() : fileSection();
+    section === "general"
+      ? generalSection(draft)
+      : section === "keys"
+        ? keysSection(draft)
+        : section === "ai"
+          ? aiSection(draft)
+          : section === "formats"
+            ? formatsSection()
+            : fileSection();
   const scroll = root.querySelector(".settings-content")?.scrollTop ?? 0;
   // アクセント色は保存前でも見た目に反映する
   document.documentElement.dataset.accent = draft.general.accent;
@@ -340,6 +448,7 @@ export function renderSettings(root: HTMLElement): void {
       <button class="back" data-action="close-settings">← ${store.session ? "仕分けに戻る" : "戻る"}</button>
       <div class="nav-title">設定</div>
       ${nav("keys", "キー割り当て")}
+      ${nav("ai", "AI 候補")}
       ${nav("general", "一般")}
       ${nav("formats", "対応形式")}
       ${nav("file", "設定ファイル")}
@@ -365,7 +474,28 @@ export async function handleSettingsAction(action: string, el: HTMLElement): Pro
     case "section":
       section = el.dataset.section as Section;
       capture = null;
+      if (section === "ai") void refreshKeyStatus();
       notify();
+      return true;
+    case "ai-recheck-key":
+      keyStatus = null;
+      notify();
+      void refreshKeyStatus();
+      return true;
+    case "ai-test":
+      connection = { state: "testing", text: "接続しています…" };
+      notify();
+      try {
+        const model = await api.testSystemone();
+        connection = { state: "ok", text: `接続できました（モデル: ${model}）` };
+      } catch (e) {
+        connection = { state: "error", text: errorText(e) };
+      }
+      notify();
+      return true;
+    case "ai-revoke-consent":
+      draft.ai.systemone.external_consent = false;
+      changed(true);
       return true;
     case "close-settings":
       await closeSettings();
@@ -476,5 +606,66 @@ export function handleSettingsInput(el: HTMLInputElement): void {
     case "prefetch":
       g.prefetch = Math.max(0, Math.min(16, Number(el.value) || 0));
       return changed(false);
+    case "ai_backend":
+      return void chooseBackend(el.value as Config["ai"]["backend"]);
+    case "ai_top_k":
+      draft.ai.top_k = parseIntIn(el.value, 1, 10, draft.ai.top_k);
+      return changed(false);
+    case "ai_prefetch":
+      draft.ai.prefetch = parseIntIn(el.value, 0, 16, draft.ai.prefetch);
+      return changed(false);
+    case "ai_local_model":
+      draft.ai.local.model = el.value;
+      return changed(false);
+    case "ai_local_strategy":
+      draft.ai.local.strategy = el.value as Config["ai"]["local"]["strategy"];
+      return changed(false);
+    case "ai_local_high":
+      draft.ai.local.high = parseUnit(el.value, draft.ai.local.high);
+      return changed(false);
+    case "ai_local_low":
+      draft.ai.local.low = parseUnit(el.value, draft.ai.local.low);
+      return changed(false);
+    case "ai_s1_endpoint":
+      draft.ai.systemone.endpoint = el.value;
+      return changed(false);
+    case "ai_s1_env":
+      draft.ai.systemone.api_key_env = el.value;
+      return changed(false);
+    case "ai_s1_kb":
+      draft.ai.systemone.max_image_kb = parseIntIn(el.value, 16, 4096, draft.ai.systemone.max_image_kb);
+      return changed(false);
+    case "ai_s1_high":
+      draft.ai.systemone.high = parseUnit(el.value, draft.ai.systemone.high);
+      return changed(false);
+    case "ai_s1_low":
+      draft.ai.systemone.low = parseUnit(el.value, draft.ai.systemone.low);
+      return changed(false);
+    case "target-desc":
+      draft.targets[Number(el.dataset.index)].description = el.value;
+      return changed(false);
+    case "target-exclude":
+      draft.targets[Number(el.dataset.index)].exclude_external = el.checked;
+      return changed(false);
   }
+}
+
+/** バックエンドの選択。System One は、画像が外部へ送られることへの同意が済むまで有効にしない */
+async function chooseBackend(backend: Config["ai"]["backend"]): Promise<void> {
+  if (!draft) return;
+  if (backend === "systemone" && !draft.ai.systemone.external_consent) {
+    const ok = await ask(consentMessage(draft.ai.systemone.endpoint), {
+      title: "画像の外部送信への同意",
+      kind: "warning",
+      okLabel: "同意して有効にする",
+      cancelLabel: "有効にしない",
+    });
+    if (!ok) {
+      notify(); // ラジオボタンを元の選択に戻す
+      return;
+    }
+    draft.ai.systemone.external_consent = true;
+  }
+  draft.ai.backend = backend;
+  changed(true);
 }

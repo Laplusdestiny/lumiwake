@@ -1349,3 +1349,44 @@ body.resizing * {
 .focus-bottom .sg-band {
   background: rgba(28, 30, 34, 0.92);
 }
+/* 設定 › AI 候補 */
+.inline-field.wide {
+  display: flex;
+}
+.inline-field.wide .input {
+  flex-grow: 1;
+  max-width: 640px;
+}
+.ai-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ai-target {
+  display: grid;
+  grid-template-columns: minmax(100px, 160px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.ai-target-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-target-ext {
+  white-space: nowrap;
+  font-size: 12px;
+}
+.consent {
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid #5a4a2e;
+  border-radius: 6px;
+  background: rgba(232, 166, 74, 0.08);
+  color: #f0c27a;
+}
+.consent.given {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--fg);
+}
