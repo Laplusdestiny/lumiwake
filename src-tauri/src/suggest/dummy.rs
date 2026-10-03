@@ -15,6 +15,10 @@ impl Suggester for OffSuggester {
         String::new()
     }
 
+    fn available(&self) -> bool {
+        false
+    }
+
     fn suggest(&self, _req: &SuggestRequest) -> Result<Suggestion, SuggestError> {
         Err(SuggestError::Disabled)
     }
@@ -95,6 +99,7 @@ mod tests {
     fn off_is_always_disabled() {
         assert!(matches!(run(&OffSuggester, "h", &choices()), Err(SuggestError::Disabled)));
         assert_eq!(OffSuggester.backend(), AiBackend::Off);
+        assert!(!OffSuggester.available());
     }
 
     #[test]

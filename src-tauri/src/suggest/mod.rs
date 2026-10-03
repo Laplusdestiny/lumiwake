@@ -74,6 +74,10 @@ pub trait Suggester: Send + Sync {
     /// キャッシュの記録に使うモデル名
     fn model(&self) -> String;
     fn suggest(&self, req: &SuggestRequest) -> Result<Suggestion, SuggestError>;
+    /// 診断を試みる価値があるか。使えない（無効・未同意・未導入）なら、先読みで画像を読みに行かない
+    fn available(&self) -> bool {
+        true
+    }
     /// 振り分け先が増えたとき、外部リクエストなしでその場で採点し直せるか（local は埋め込みのキャッシュで可能）
     fn rescoreable(&self) -> bool {
         false

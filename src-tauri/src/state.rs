@@ -3,8 +3,11 @@
 use crate::config::{self, Config};
 use crate::decoder::{make_preview, PrefetchJob, Prefetcher, PreviewCache, Registry};
 use crate::fileops::{Session, Status};
+use crate::suggest::choices::build_choices;
 use crate::suggest::factory::make_suggester;
+use crate::suggest::hash::hash_file;
 use crate::suggest::outcomes::OutcomeRecorder;
+use crate::suggest::prefetch::{DiagnosisPrefetcher, Job};
 use crate::suggest::service::SuggestionService;
 use crate::suggest::store::Store;
 use std::path::{Path, PathBuf};
@@ -41,6 +44,8 @@ pub struct AppState {
     pub suggest: Arc<SuggestionService>,
     /// 振り分けの確定・取り消しを診断サービスへ記録する
     pub outcomes: OutcomeRecorder,
+    /// 表示中の数枚先の AI 診断を先に済ませる
+    suggest_prefetcher: DiagnosisPrefetcher,
     /// true のときだけウィンドウを閉じてよい（削除予定の確認を済ませた）
     pub allow_exit: AtomicBool,
     next_generation: AtomicU64,
@@ -75,6 +80,7 @@ impl AppState {
             prefetcher,
             suggest,
             outcomes,
+            suggest_prefetcher: DiagnosisPrefetcher::start(),
             allow_exit: AtomicBool::new(false),
             next_generation: AtomicU64::new(1),
         }
@@ -111,6 +117,37 @@ impl AppState {
             })
             .collect();
         self.prefetcher.schedule(jobs);
+    }
+
+    /// 表示中の画像の数枚先を AI 診断の先読みに載せる（表示中の画像そのものは画面が直接求める）。
+    /// 使えない設定なら何もせず、画像を読みにも行かない。
+    pub fn schedule_diagnosis_prefetch(&self, state: &SessionState) {
+        let (ai, targets) = {
+            let c = self.config();
+            (c.config.ai.clone(), c.config.targets.clone())
+        };
+        if !self.suggest.available() || ai.prefetch == 0 {
+            self.suggest_prefetcher.schedule(Vec::new());
+            return;
+        }
+        let choices = build_choices(&targets, self.suggest.backend());
+        let s = &state.session;
+        let jobs: Vec<Job> = s
+            .upcoming(ai.prefetch)
+            .into_iter()
+            .map(|i| {
+                let item = &s.items()[i];
+                let path = location(&item.path, &item.status).to_path_buf();
+                let (svc, registry, choices) = (self.suggest.clone(), self.registry.clone(), choices.clone());
+                Box::new(move || {
+                    // 結果はキャッシュに入る。失敗しても、表示時に画面が求めたときにもう一度試す
+                    if let Ok(hash) = hash_file(&path) {
+                        let _ = svc.diagnose(&hash, || registry.decode(&path), &choices, false);
+                    }
+                }) as Job
+            })
+            .collect();
+        self.suggest_prefetcher.schedule(jobs);
     }
 }
 

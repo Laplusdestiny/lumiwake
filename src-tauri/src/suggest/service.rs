@@ -71,6 +71,11 @@ impl SuggestionService {
         self.suggester().backend()
     }
 
+    /// 診断を試みる価値があるか（先読みの要否の判断に使う）
+    pub fn available(&self) -> bool {
+        self.suggester().available()
+    }
+
     /// キャッシュにある診断を、現在の振り分け先に合わせて返す。リクエストは出さない
     pub fn cached(&self, image_hash: &str, current: &[Choice]) -> Result<Option<Diagnosis>, SuggestError> {
         let backend = backend_name(self.backend());

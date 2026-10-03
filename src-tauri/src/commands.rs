@@ -298,6 +298,7 @@ fn with_session<T>(
     // 振り分けの確定・取り消しを、AI 候補の記録（ユーザーが最終的に振り分けた先）へ渡す
     state.outcomes.send(s.generation, s.session.take_events());
     state.schedule_prefetch(s, prefetch);
+    state.schedule_diagnosis_prefetch(s);
     let view = session_view(state, s);
     Ok((result?, view))
 }
@@ -643,6 +644,52 @@ mod tests {
         let v =
             suggestions_for(&state.suggest, &state.registry, &tmp.path().join("none.png"), &Config::default(), false);
         assert_eq!(v.state, crate::suggest::view::ViewState::Off);
+    }
+
+    #[test]
+    fn upcoming_images_are_diagnosed_ahead_of_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (src, dest) = (tmp.path().join("src"), tmp.path().join("dest"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dest).unwrap();
+        let images: Vec<PathBuf> = (0..4)
+            .map(|i| {
+                let p = src.join(format!("{i}.png"));
+                image::DynamicImage::new_luma8(2 + i, 2).save(&p).unwrap(); // 中身を変えてハッシュを分ける
+                p
+            })
+            .collect();
+        let state = AppState::new(tmp.path().join("config.toml"), tmp.path().join("data"));
+        {
+            let mut c = state.config();
+            c.config.targets.push(config::Target {
+                key: "1".into(),
+                name: "dest".into(),
+                path: dest.clone(),
+                description: String::new(),
+                exclude_external: false,
+            });
+            c.config.ai.prefetch = 2;
+        }
+        state
+            .suggest
+            .set_suggester(Arc::new(crate::suggest::dummy::DummySuggester { kind: crate::suggest::ScoreKind::Match }));
+        let session = Session::new(Arc::new(fileops::RealFs), images.clone(), None);
+        *state.session() = Some(SessionState { session, generation: 1, source: src, unsupported: Vec::new() });
+
+        with_session(&state, |_| Ok(())).unwrap(); // 現在は 0 枚目。先読みは 1・2 枚目
+        let choices = build_choices(&state.config().config.targets, state.suggest.backend());
+        let cached = |i: usize| {
+            let hash = hash_file(&images[i]).unwrap();
+            state.suggest.cached(&hash, &choices).unwrap().is_some()
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !(cached(1) && cached(2)) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(cached(1) && cached(2), "数枚先は先に診断される");
+        assert!(!cached(0), "表示中の画像は画面が直接求める");
+        assert!(!cached(3), "prefetch の範囲外は診断しない");
     }
 
     #[test]

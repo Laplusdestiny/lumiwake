@@ -26,6 +26,10 @@ impl Suggester for UnavailableSuggester {
         String::new()
     }
 
+    fn available(&self) -> bool {
+        false
+    }
+
     fn suggest(&self, _req: &SuggestRequest) -> Result<Suggestion, SuggestError> {
         Err(SuggestError::Unavailable(self.reason.clone()))
     }
