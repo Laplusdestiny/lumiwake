@@ -213,6 +213,12 @@ export const api = {
   /** 画像の AI 候補。force=true で診断し直す（キャッシュにあればリクエストは出ない） */
   getSuggestions: (generation: number, index: number, force = false) =>
     invoke<Suggestions>("get_suggestions", { generation, index, force }),
+  /** System One の API キーが環境変数にあるか（キーの値は返らない） */
+  aiKeyStatus: () => invoke<{ envName: string; detected: boolean }>("ai_key_status"),
+  /** System One への接続テスト。合成した小さな画像を 1 回だけ送り、成功したらモデル名を返す */
+  testSystemone: () => invoke<string>("test_systemone"),
+  /** 画像を外部へ送ることへの同意を保存する（false で取り消し） */
+  setExternalConsent: (consent: boolean) => invoke<ConfigPayload>("set_external_consent", { consent }),
   pendingDeletions: () => invoke<DeletionSummary>("pending_deletions"),
   finalizeAndExit: (del: boolean) => invoke<FinalizeReport>("finalize_and_exit", { delete: del }),
   exitApp: () => invoke<void>("exit_app"),

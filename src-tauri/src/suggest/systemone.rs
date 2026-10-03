@@ -342,6 +342,25 @@ fn describe_failure(status: u16, body: &[u8]) -> String {
     }
 }
 
+impl SystemOneSuggester {
+    /// 環境変数 `api_key_env` に API キーが設定されているか（値は見せず、有無だけ）
+    pub fn key_detected(&self) -> bool {
+        (self.key)(&self.cfg.api_key_env).is_some()
+    }
+
+    /// 接続テスト。ユーザーの画像は使わず、合成した小さな白い画像と仮の選択肢を 1 回だけ送る。
+    /// 成功したときは使われるモデル名を返す。
+    pub fn test_connection(&self) -> Result<String, SuggestError> {
+        let img = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(8, 8, image::Rgb([255, 255, 255])));
+        let choices = [
+            Choice { id: "test-a".into(), label: "接続テスト A".into(), description: String::new() },
+            Choice { id: "test-b".into(), label: "接続テスト B".into(), description: String::new() },
+        ];
+        self.suggest(&SuggestRequest { image_hash: "connection-test", image: &img, choices: &choices })?;
+        Ok(self.model())
+    }
+}
+
 impl Suggester for SystemOneSuggester {
     fn backend(&self) -> AiBackend {
         AiBackend::Systemone
@@ -503,6 +522,35 @@ mod transport_tests {
             assert!(e.contains(expect), "{status}: {e}");
             assert!(!e.contains("secret-token"), "{status}: {e}");
         }
+    }
+
+    #[test]
+    fn connection_test_sends_only_a_synthetic_image_and_reports_the_model() {
+        let body = serde_json::to_vec(&json!({
+            "model": "clef-flash",
+            "answers": { "dest": { "type": "choice", "choice": "f0", "confidence": 0.5,
+                "probabilities": { "f0": 0.5, "f1": 0.3, "none": 0.2 } } },
+            "usage": { "input_tokens": 1, "output_tokens": 1 }
+        }))
+        .unwrap();
+        let mock = Mock::new(Ok((200, body)));
+        let s = suggester(EP, &mock, Some("k"));
+        assert_eq!(s.test_connection().unwrap(), "clef-flash");
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let sent: Value = serde_json::from_slice(&calls[0].2).unwrap();
+        assert!(sent["questions"]["dest"]["criteria"]["f0"].as_str().unwrap().contains("接続テスト"));
+        // 合成した 8x8 の白い画像（ごく小さい）だけを送る
+        let b64 = sent["images"][0]["base64"].as_str().unwrap();
+        let jpeg = base64::engine::general_purpose::STANDARD.decode(b64).unwrap();
+        assert_eq!(image::load_from_memory(&jpeg).unwrap().to_rgb8().dimensions(), (8, 8));
+    }
+
+    #[test]
+    fn key_detection_reports_presence_only() {
+        let mock = Mock::new(Ok((200, vec![])));
+        assert!(suggester(EP, &mock, Some("k")).key_detected());
+        assert!(!suggester(EP, &mock, None).key_detected());
     }
 
     #[test]

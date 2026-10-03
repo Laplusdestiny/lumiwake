@@ -12,6 +12,7 @@ use crate::suggest::choices::build_choices;
 use crate::suggest::factory::make_suggester;
 use crate::suggest::hash::hash_file;
 use crate::suggest::service::SuggestionService;
+use crate::suggest::systemone::SystemOneSuggester;
 use crate::suggest::view::{build_view, SuggestionView};
 use crate::suggest::SuggestError;
 use serde::{Deserialize, Serialize};
@@ -500,6 +501,39 @@ pub async fn get_suggestions(
         .map_err(|e| e.to_string())
 }
 
+/// System One の API キーの検出状態（キーの値は返さない）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiKeyStatus {
+    env_name: String,
+    detected: bool,
+}
+
+#[tauri::command]
+pub fn ai_key_status(state: State<'_, AppState>) -> AiKeyStatus {
+    let cfg = state.config().config.ai.systemone.clone();
+    let env_name = cfg.api_key_env.clone();
+    AiKeyStatus { detected: SystemOneSuggester::new(cfg).key_detected(), env_name }
+}
+
+/// System One への接続テスト（合成した小さな画像を 1 回だけ送る）。成功したらモデル名を返す
+#[tauri::command]
+pub async fn test_systemone(state: State<'_, AppState>) -> CmdResult<String> {
+    let cfg = state.config().config.ai.systemone.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        SystemOneSuggester::new(cfg).test_connection().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 画像を外部へ送ることへの同意を保存する（false で取り消し）。同意するまで System One は使われない
+#[tauri::command]
+pub fn set_external_consent(state: State<'_, AppState>, consent: bool) -> ConfigPayload {
+    remember(&state, |c| c.ai.systemone.external_consent = consent);
+    config_payload(&state)
+}
+
 // ---- 終了時の削除確認 ----
 
 #[derive(Serialize)]
@@ -690,6 +724,23 @@ mod tests {
         assert!(cached(1) && cached(2), "数枚先は先に診断される");
         assert!(!cached(0), "表示中の画像は画面が直接求める");
         assert!(!cached(3), "prefetch の範囲外は診断しない");
+    }
+
+    #[test]
+    fn consent_is_persisted_and_gates_the_external_backend() {
+        let (_tmp, state, _src, _dest) = app();
+        remember(&state, |c| c.ai.backend = AiBackend::Systemone);
+        assert_eq!(state.suggest.backend(), AiBackend::Systemone);
+        assert!(!state.suggest.available(), "同意前は診断を試みない（画像を読みにも行かない）");
+
+        remember(&state, |c| c.ai.systemone.external_consent = true);
+        assert!(state.suggest.available(), "同意すると使える");
+        let saved = config::load_or_create(&state.config_path).unwrap();
+        assert!(saved.ai.systemone.external_consent, "同意はファイルに保存される");
+
+        remember(&state, |c| c.ai.systemone.external_consent = false);
+        assert!(!state.suggest.available(), "同意を取り消すと再び使えなくなる");
+        assert!(!config::load_or_create(&state.config_path).unwrap().ai.systemone.external_consent);
     }
 
     #[test]
