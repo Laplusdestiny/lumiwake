@@ -1,6 +1,7 @@
 //! 設定から Suggester を作る。外部送信への同意の確認はここで一元的に行う。
 
 use super::dummy::OffSuggester;
+use super::systemone::SystemOneSuggester;
 use super::{SuggestError, SuggestRequest, Suggester, Suggestion};
 use crate::config::ai::{Ai, AiBackend};
 use std::sync::Arc;
@@ -47,7 +48,7 @@ pub fn make_suggester(ai: &Ai) -> Arc<dyn Suggester> {
                     "画像の外部送信への同意が済んでいないため、System One は使えません",
                 ));
             }
-            Arc::new(UnavailableSuggester::new(AiBackend::Systemone, "System One はまだ使えません"))
+            Arc::new(SystemOneSuggester::new(ai.systemone.clone()))
         }
     }
 }
@@ -77,6 +78,19 @@ mod tests {
         match ask(&*make_suggester(&ai)) {
             Err(SuggestError::Unavailable(m)) => assert!(m.contains("同意"), "{m}"),
             other => panic!("同意前は診断できないはず: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn systemone_with_consent_is_built_but_still_needs_a_key_and_a_real_endpoint() {
+        let mut ai = Ai { backend: AiBackend::Systemone, ..Ai::default() };
+        ai.systemone.external_consent = true;
+        let s = make_suggester(&ai);
+        assert!(s.available(), "同意済みなら診断を試みる");
+        // 既定のエンドポイントは {account} が未置換なので、送信前に止まる（通信は発生しない）
+        match ask(&*s) {
+            Err(SuggestError::Unavailable(m)) => assert!(m.contains("{account}"), "{m}"),
+            other => panic!("送れないはず: {other:?}"),
         }
     }
 
