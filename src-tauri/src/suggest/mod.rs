@@ -11,6 +11,7 @@ pub mod outcomes;
 pub mod service;
 pub mod store;
 pub mod time;
+pub mod view;
 
 use crate::config::ai::AiBackend;
 use image::DynamicImage;
