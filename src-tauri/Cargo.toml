@@ -33,6 +33,9 @@ kamadak-exif = "0.6"
 blake3 = "1"
 # 診断キャッシュ・履歴の保存先。bundled で SQLite を同梱し、Windows でも別途ライブラリを要らなくする
 rusqlite = { version = "0.40", features = ["bundled"] }
+# System One 互換 API への同期 HTTP クライアント（TLS は rustls で、Windows でも OpenSSL を要らなくする）
+ureq = "3"
+base64 = "0.22"
 libheif-rs = { version = "2", optional = true, default-features = false, features = ["v1_17"] }
 
 [features]

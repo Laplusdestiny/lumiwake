@@ -54,6 +54,8 @@ export interface Ai {
   local: { model: string; strategy: "zeroshot" | "knn" | "hybrid"; high: number; low: number };
   systemone: {
     endpoint: string;
+    /** 空ならエンドポイントの末尾から判別 */
+    model: string;
     api_key_env: string;
     max_image_kb: number;
     high: number;

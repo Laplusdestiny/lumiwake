@@ -47,6 +47,9 @@ impl Default for AiLocal {
 #[serde(default)]
 pub struct AiSystemOne {
     pub endpoint: String,
+    /// リクエストの `model`（`clef` / `clef-flash`）。空ならエンドポイントの末尾から判別する。
+    /// エンドポイントのモデルと一致しないと API が 400 を返すため、通常は空のままでよい
+    pub model: String,
     /// API キーを読む環境変数の名前（キー自体は設定ファイルに書かない）
     pub api_key_env: String,
     /// 送信前の縮小・再圧縮で収める画像サイズ（KB）
@@ -61,6 +64,7 @@ impl Default for AiSystemOne {
     fn default() -> Self {
         AiSystemOne {
             endpoint: "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/clef-flash".into(),
+            model: String::new(),
             api_key_env: "LUMIWAKE_SYSTEMONE_KEY".into(),
             max_image_kb: 190,
             high: 0.85,
@@ -107,6 +111,7 @@ impl Ai {
         }
         self.local.model = self.local.model.trim().to_string();
         self.systemone.endpoint = self.systemone.endpoint.trim().to_string();
+        self.systemone.model = self.systemone.model.trim().to_string();
         self.systemone.api_key_env = self.systemone.api_key_env.trim().to_string();
         self.systemone.max_image_kb = self.systemone.max_image_kb.clamp(16, 4096);
     }
@@ -195,7 +200,9 @@ mod tests {
         a.local.low = f32::NAN;
         a.systemone.max_image_kb = 0;
         a.systemone.api_key_env = "  KEY  ".into();
+        a.systemone.model = " clef ".into();
         a.normalize();
+        assert_eq!(a.systemone.model, "clef");
         assert_eq!(a.top_k, 1);
         assert_eq!(a.prefetch, MAX_PREFETCH);
         assert_eq!((a.local.high, a.local.low), (1.0, 0.0));
