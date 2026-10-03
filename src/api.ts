@@ -40,6 +40,25 @@ export interface Config {
     toggle_paths: string;
   };
   targets: Target[];
+  /** AI 振り分け候補。設定画面が対応するまでは、読んだ値をそのまま保存し直す */
+  ai: Ai;
+}
+
+export type AiBackend = "local" | "systemone" | "off";
+
+export interface Ai {
+  backend: AiBackend;
+  top_k: number;
+  prefetch: number;
+  local: { model: string; strategy: "zeroshot" | "knn" | "hybrid"; high: number; low: number };
+  systemone: {
+    endpoint: string;
+    api_key_env: string;
+    max_image_kb: number;
+    high: number;
+    low: number;
+    external_consent: boolean;
+  };
 }
 
 export interface Issue {

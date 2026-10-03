@@ -2,6 +2,7 @@
 //!
 //! GUI の設定画面と TOML ファイルの両方から編集でき、GUI での変更は TOML に書き戻す。
 
+pub mod ai;
 pub mod keys;
 
 use keys::{reserved_reason, KeyCombo};
@@ -182,6 +183,8 @@ pub struct Config {
     pub general: General,
     pub keys: ActionKeys,
     pub targets: Vec<Target>,
+    /// AI 振り分け候補（MVP 後の拡張）
+    pub ai: ai::Ai,
 }
 
 impl Default for Config {
@@ -191,6 +194,7 @@ impl Default for Config {
             general: General::default(),
             keys: ActionKeys::default(),
             targets: Vec::new(),
+            ai: ai::Ai::default(),
         }
     }
 }
@@ -246,6 +250,7 @@ impl Config {
             self.general.source_dir = None;
         }
         self.general.prefetch = self.general.prefetch.clamp(0, 16);
+        self.ai.normalize();
     }
 
     /// キーの重複・予約キーとの衝突・パスの問題を調べる
@@ -276,6 +281,10 @@ impl Config {
         dups.sort();
         for (key, owners) in dups {
             issues.push(Issue::error(format!("キー {key} が重複しています: {}", owners.join("、")), Some(key)));
+        }
+
+        for (is_error, message) in self.ai.problems() {
+            issues.push(if is_error { Issue::error(message, None) } else { Issue::warning(message, None) });
         }
 
         let delete_folder = self.general.delete_folder.as_deref();
@@ -504,6 +513,19 @@ mod tests {
         assert_eq!(again, c);
         let first = to_toml(&c).split("[[targets]]").nth(1).unwrap().to_string();
         assert!(!first.contains("description") && !first.contains("exclude_external"), "既定値は書き出さない");
+    }
+
+    #[test]
+    fn ai_section_roundtrips_and_is_validated() {
+        let c = parse("[ai]\nbackend = \"off\"\n[ai.local]\nhigh = 0.9\n", Path::new("x")).unwrap();
+        assert_eq!(c.ai.backend, ai::AiBackend::Off);
+        assert_eq!(c.ai.local.high, 0.9);
+        assert_eq!(parse(&to_toml(&c), Path::new("x")).unwrap(), c);
+        assert_eq!(parse("", Path::new("x")).unwrap().ai, ai::Ai::default(), "古い設定ファイルは既定値で読める");
+
+        let mut bad = Config::default();
+        bad.ai.local.low = 0.9;
+        assert!(Config::has_errors(&bad.validate()), "しきい値の逆転は保存できない");
     }
 
     #[test]
