@@ -31,6 +31,8 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 kamadak-exif = "0.6"
 # AI 診断キャッシュのキー（画像ファイルの中身のハッシュ）
 blake3 = "1"
+# 診断キャッシュ・履歴の保存先。bundled で SQLite を同梱し、Windows でも別途ライブラリを要らなくする
+rusqlite = { version = "0.40", features = ["bundled"] }
 libheif-rs = { version = "2", optional = true, default-features = false, features = ["v1_17"] }
 
 [features]

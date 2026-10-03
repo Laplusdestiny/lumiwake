@@ -5,6 +5,7 @@
 
 pub mod dummy;
 pub mod hash;
+pub mod store;
 
 use crate::config::ai::AiBackend;
 use image::DynamicImage;
