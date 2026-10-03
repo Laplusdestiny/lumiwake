@@ -12,6 +12,7 @@ pub mod outcomes;
 pub mod prefetch;
 pub mod service;
 pub mod store;
+pub mod systemone;
 pub mod time;
 pub mod view;
 
