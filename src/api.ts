@@ -62,6 +62,35 @@ export interface Ai {
   };
 }
 
+export type SuggestionLevel = "high" | "mid" | "low";
+
+/** 候補カード 1 枚。`target` は設定の targets の番号（キーでの振り分けはこの番号を使う） */
+export interface SuggestionCard {
+  target: number;
+  key: string;
+  name: string;
+  path: string;
+  score: number;
+  level: SuggestionLevel;
+}
+
+/**
+ * 1 枚の画像の AI 候補。`state` が "ready" のときだけ cards などが意味を持つ。
+ * kind が "match" のスコアは確率ではなく「一致度」と表記する。
+ */
+export type Suggestions = {
+  backend: AiBackend;
+  kind: "probability" | "match" | null;
+  /** 画像を外部へ送っているか（「外部送信中」表示） */
+  sendsImages: boolean;
+  cards: SuggestionCard[];
+  /** 「該当なし」の確率（Space＝スキップに対応）。確率を返すバックエンドのみ */
+  noneOfAbove: number | null;
+  /** 診断のあとに追加された、未評価の振り分け先の名前 */
+  unevaluated: string[];
+  fromCache: boolean;
+} & ({ state: "ready" | "off" } | { state: "unavailable" | "failed"; message: string });
+
 export interface Issue {
   severity: "error" | "warning";
   message: string;
@@ -179,6 +208,9 @@ export const api = {
   navigate: (forward: boolean) => invoke<SessionView>("navigate", { forward }),
   jumpTo: (index: number) => invoke<SessionView>("jump_to", { index }),
   imageInfo: (generation: number, index: number) => invoke<ImageInfo>("image_info", { generation, index }),
+  /** 画像の AI 候補。force=true で診断し直す（キャッシュにあればリクエストは出ない） */
+  getSuggestions: (generation: number, index: number, force = false) =>
+    invoke<Suggestions>("get_suggestions", { generation, index, force }),
   pendingDeletions: () => invoke<DeletionSummary>("pending_deletions"),
   finalizeAndExit: (del: boolean) => invoke<FinalizeReport>("finalize_and_exit", { delete: del }),
   exitApp: () => invoke<void>("exit_app"),

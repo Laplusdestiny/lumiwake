@@ -2,12 +2,18 @@
 //!
 //! 画面はキー入力をここへ渡すだけで、ファイル操作の整合性は `fileops` が持つ。
 
+use crate::config::ai::AiBackend;
 use crate::config::{self, Config, Issue};
 use crate::decoder::{self, FormatSupport};
 use crate::fileops::{self, Action, ConflictChoice, FinalizeReport, HistoryKind, PendingDeletion, Session, Status};
 use crate::scanner::{self, ScanOptions};
 use crate::state::{location, AppState, SessionState};
+use crate::suggest::choices::build_choices;
 use crate::suggest::factory::make_suggester;
+use crate::suggest::hash::hash_file;
+use crate::suggest::service::SuggestionService;
+use crate::suggest::view::{build_view, SuggestionView};
+use crate::suggest::SuggestError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -449,6 +455,50 @@ pub async fn image_info(state: State<'_, AppState>, generation: u64, index: usiz
     .map_err(|e| e.to_string())?
 }
 
+// ---- AI 候補 ----
+
+/// 1 枚の画像の候補を作る（重い処理なので呼び出し側でブロッキングスレッドに載せる）
+fn suggestions_for(
+    svc: &SuggestionService,
+    registry: &decoder::Registry,
+    path: &Path,
+    config: &Config,
+    force: bool,
+) -> SuggestionView {
+    let backend = svc.backend();
+    if backend == AiBackend::Off {
+        // 使わない設定のときは、画像を読みにも行かない
+        return build_view(&config.ai, &config.targets, backend, Err(SuggestError::Disabled));
+    }
+    let choices = build_choices(&config.targets, backend);
+    let result = hash_file(path)
+        .map_err(|e| SuggestError::Failed(format!("画像を読み込めません: {e}")))
+        .and_then(|hash| svc.diagnose(&hash, || registry.decode(path), &choices, force));
+    build_view(&config.ai, &config.targets, backend, result)
+}
+
+/// 表示中などの画像の AI 候補。`force` なら診断し直す（再診断キー）。
+/// キャッシュにあればリクエストは出さない。AI 候補が使えなくても仕分け自体は続けられる。
+#[tauri::command]
+pub async fn get_suggestions(
+    state: State<'_, AppState>,
+    generation: u64,
+    index: usize,
+    force: bool,
+) -> CmdResult<SuggestionView> {
+    let path = {
+        let guard = state.session();
+        let s = guard.as_ref().filter(|s| s.generation == generation).ok_or("古い画面からの要求です")?;
+        let item = s.session.items().get(index).ok_or("画像が見つかりません")?;
+        location(&item.path, &item.status).to_path_buf()
+    };
+    let config = state.config().config.clone();
+    let (svc, registry) = (state.suggest.clone(), state.registry.clone());
+    tauri::async_runtime::spawn_blocking(move || suggestions_for(&svc, &registry, &path, &config, force))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---- 終了時の削除確認 ----
 
 #[derive(Serialize)]
@@ -537,6 +587,62 @@ mod tests {
         assert_eq!(recorded(&state, &dest).len(), 1);
         with_session(&state, |s| s.session.undo().map_err(|e| e.to_string())).unwrap(); // 移動を取り消す
         assert!(recorded(&state, &dest).is_empty(), "Undo で記録も取り消される");
+    }
+
+    fn write_png(path: &Path) {
+        image::DynamicImage::new_rgb8(4, 4).save(path).unwrap();
+    }
+
+    #[test]
+    fn suggestions_use_the_cache_for_the_same_content_even_after_the_file_moves() {
+        let (tmp, state, src, dest) = app();
+        let img = src.join("p.png");
+        write_png(&img);
+        let mut config = Config::default();
+        config.targets.push(config::Target {
+            key: "1".into(),
+            name: "dest".into(),
+            path: dest.clone(),
+            description: String::new(),
+            exclude_external: false,
+        });
+        state
+            .suggest
+            .set_suggester(Arc::new(crate::suggest::dummy::DummySuggester { kind: crate::suggest::ScoreKind::Match }));
+        config.ai.local.low = 0.0;
+
+        let first = suggestions_for(&state.suggest, &state.registry, &img, &config, false);
+        assert_eq!(first.state, crate::suggest::view::ViewState::Ready);
+        assert!(!first.from_cache);
+        assert_eq!(first.cards.len(), 1);
+
+        // 別の場所へ移動・改名しても中身が同じなので再診断しない
+        let moved = tmp.path().join("moved.png");
+        std::fs::rename(&img, &moved).unwrap();
+        let second = suggestions_for(&state.suggest, &state.registry, &moved, &config, false);
+        assert!(second.from_cache);
+        let forced = suggestions_for(&state.suggest, &state.registry, &moved, &config, true);
+        assert!(!forced.from_cache, "再診断キーなら診断し直す");
+    }
+
+    #[test]
+    fn suggestions_report_a_missing_file_as_failed() {
+        let (tmp, state, _src, _dest) = app();
+        state
+            .suggest
+            .set_suggester(Arc::new(crate::suggest::dummy::DummySuggester { kind: crate::suggest::ScoreKind::Match }));
+        let v =
+            suggestions_for(&state.suggest, &state.registry, &tmp.path().join("none.png"), &Config::default(), false);
+        assert!(matches!(v.state, crate::suggest::view::ViewState::Failed { .. }), "{:?}", v.state);
+    }
+
+    #[test]
+    fn suggestions_when_off_do_not_even_read_the_file() {
+        let (tmp, state, _src, _dest) = app();
+        state.suggest.set_suggester(Arc::new(crate::suggest::dummy::OffSuggester));
+        let v =
+            suggestions_for(&state.suggest, &state.registry, &tmp.path().join("none.png"), &Config::default(), false);
+        assert_eq!(v.state, crate::suggest::view::ViewState::Off);
     }
 
     #[test]

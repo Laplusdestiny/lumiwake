@@ -58,6 +58,7 @@ pub fn run() {
             commands::navigate,
             commands::jump_to,
             commands::image_info,
+            commands::get_suggestions,
             commands::pending_deletions,
             commands::finalize_and_exit,
             commands::exit_app,
