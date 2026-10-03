@@ -7,6 +7,7 @@ pub mod choices;
 pub mod dummy;
 pub mod factory;
 pub mod hash;
+pub mod image_prep;
 pub mod outcomes;
 pub mod prefetch;
 pub mod service;
