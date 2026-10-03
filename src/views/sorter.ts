@@ -4,6 +4,15 @@ import * as actions from "../actions";
 import { displayCombo } from "../keys";
 import { notify, store } from "../store";
 import { toast } from "../toast";
+import {
+  badgeText,
+  barPercent,
+  candidateLevels,
+  noticeText,
+  scoreLabel,
+  scoreText,
+  unevaluatedText,
+} from "../suggest";
 import { esc, formatBytes, formatCount, formatDate, icons, keycap, shortPath } from "../util";
 
 type Mode = Config["general"]["view_mode"];
@@ -21,6 +30,7 @@ function sidebarSkeleton(): string {
       <div class="brand">Lumiwake</div>
       <button class="source-btn" data-action="change-source" title="仕分け元フォルダを変更">${icons.folder}<span data-slot="source"></span></button>
       <div class="grow"></div>
+      <div data-slot="ai-badge"></div>
       <div class="segmented" role="group" aria-label="表示モード">
         <button data-action="mode" data-mode="sidebar" aria-pressed="true">サイドバー</button>
         <button data-action="mode" data-mode="focus" aria-pressed="false">全画面</button>
@@ -33,6 +43,7 @@ function sidebarSkeleton(): string {
       <main class="stage">
         <div class="meta" data-slot="meta"></div>
         <div class="preview" data-slot="preview"></div>
+        <div class="suggest" data-slot="suggest"></div>
         <div class="filmstrip" data-slot="filmstrip"></div>
         <div class="hints" data-slot="hints"></div>
       </main>
@@ -56,6 +67,7 @@ function focusSkeleton(): string {
       <button class="icon-btn glass" data-action="mode" data-mode="sidebar" aria-label="全画面を終了" title="全画面を終了（Esc）">${icons.exitFull}</button>
     </div>
     <div class="focus-bottom">
+      <div class="suggest" data-slot="suggest"></div>
       <div class="focus-chips" data-slot="targets"></div>
       <div class="hints" data-slot="hints"></div>
     </div>
@@ -234,20 +246,86 @@ function targetsHtml(s: SessionView): string {
   // パスを隠していても、同じ名前の振り分け先があるものは区別できるようにパスを出す
   const names = c.targets.map(targetName);
   const duplicated = new Set(names.filter((n, i) => names.indexOf(n) !== i));
+  const levels = candidateLevels(store.suggest?.view ?? null);
+  const unevaluated = new Set(store.suggest?.view?.unevaluated ?? []);
   const rows = c.targets
     .map((t, i) => {
       const showPath = c.general.show_paths || duplicated.has(names[i]);
-      return `<button class="target-row" data-action="move" data-target="${i}" title="${esc(t.path)}" ${s.current ? "" : "disabled"}>
+      const level = levels.get(i);
+      const pending = level === undefined && unevaluated.has(names[i]);
+      return `<button class="target-row${level ? ` suggested level-${level}` : ""}" data-action="move" data-target="${i}" title="${esc(t.path)}" ${s.current ? "" : "disabled"}>
         ${keycap(displayCombo(t.key))}
         <span class="target-text">
           <span class="target-name">${esc(names[i])}</span>
           ${showPath ? `<span class="target-path">${esc(sp(t.path))}</span>` : ""}
         </span>
+        ${pending ? `<span class="tag-unevaluated" title="新しい振り分け先で、この画像はまだ評価されていません">未評価</span>` : ""}
         <span class="count" title="今回移動した枚数">${s.movedCounts[i] || ""}</span>
       </button>`;
     })
     .join("");
   return rows + deleteRow(s);
+}
+
+/** ヘッダーの AI バッジ。外部へ画像を送る設定のときは、そうとわかる色と文言で常に出す */
+function aiBadgeHtml(): string {
+  const text = badgeText(store.config!.config.ai);
+  if (!text) return "";
+  const external = store.config!.config.ai.backend === "systemone";
+  return `<div class="ai-badge${external ? " external" : ""}" title="${external ? "画像を縮小して外部の API へ送信します" : "画像は端末の外へ送られません"}">${esc(text)}</div>`;
+}
+
+/** 候補ストリップ（プレビューの下）。AI を使わない設定なら何も出さない */
+function suggestHtml(s: SessionView): string {
+  const cfg = store.config!.config;
+  if (cfg.ai.backend === "off" || !s.current) return "";
+  const sg = store.suggest;
+  const v = sg?.view ?? null;
+  const rediagnose = displayCombo(cfg.keys.rediagnose);
+
+  const notice = noticeText(v);
+  if (notice) {
+    // 再診断で直る可能性があるのは失敗したときだけ（未同意・未導入は設定を変えるまで使えない）
+    const retry =
+      v?.state === "failed"
+        ? `<span class="grow"></span><button class="sg-link" data-action="rediagnose">${keycap(rediagnose)} 再診断</button>`
+        : "";
+    return `<div class="sg-notice"><span>${esc(notice)}</span>${retry}</div>`;
+  }
+  if (!v || v.state !== "ready") {
+    return `<div class="sg-notice muted">候補を調べています…</div>`;
+  }
+
+  const unevaluated = unevaluatedText(v.unevaluated);
+  const band = unevaluated
+    ? `<div class="sg-band"><span>${esc(unevaluated)}</span><span class="grow"></span><button class="sg-link" data-action="rediagnose">${keycap(rediagnose)} 再診断</button></div>`
+    : "";
+
+  const label = scoreLabel(v.kind);
+  const cards = v.cards
+    .map((c) => {
+      const pct = barPercent(c.score);
+      const title = v.kind === "match" ? `${c.path}\n一致度（確率ではありません）` : c.path;
+      return `<button class="sg-card level-${c.level}" data-action="move" data-target="${c.target}" title="${esc(title)}" ${s.current ? "" : "disabled"}>
+        <span class="sg-head">${keycap(displayCombo(c.key), "md")}<span class="sg-name">${esc(c.name)}</span>
+          <span class="sg-score">${label ? `<small>${label}</small>` : ""}${esc(scoreText(c.score, v.kind))}</span></span>
+        <span class="sg-path">${esc(sp(c.path))}</span>
+        <span class="sg-bar"><span style="width:${pct}%"></span></span>
+      </button>`;
+    })
+    .join("");
+  // 「該当なし」はスキップと同じ（確率を返すバックエンドのみ）
+  const none =
+    v.noneOfAbove != null
+      ? `<button class="sg-card sg-none" data-action="skip" title="スキップして次へ">
+        <span class="sg-head">${keycap(displayCombo(cfg.keys.skip), "md")}<span class="sg-name">該当なし</span>
+          <span class="sg-score">${esc(scoreText(v.noneOfAbove, "probability"))}</span></span>
+        <span class="sg-path">スキップして次へ</span>
+        <span class="sg-bar"><span style="width:${barPercent(v.noneOfAbove)}%"></span></span>
+      </button>`
+      : "";
+  const empty = !cards && !none ? `<div class="sg-notice muted">有力な候補はありません</div>` : "";
+  return `${band}<div class="sg-cards${sg?.loading ? " refreshing" : ""}">${cards}${none}</div>${empty}`;
 }
 
 function chipsHtml(): string {
@@ -280,6 +358,10 @@ export function renderSorter(root: HTMLElement): void {
   slot("progress")!.innerHTML = progressHtml(s);
   slot("meta")!.innerHTML = metaHtml(s);
   updatePreview(slot("preview")!, s);
+  const badge = slot("ai-badge");
+  if (badge) badge.innerHTML = aiBadgeHtml();
+  const suggest = slot("suggest");
+  if (suggest) suggest.innerHTML = suggestHtml(s);
   const film = slot("filmstrip");
   if (film) film.innerHTML = filmstripHtml(s);
   slot("hints")!.innerHTML = skipChipHtml(s) + hintsHtml();
@@ -307,6 +389,7 @@ export function handleSorterKey(combo: string, e: KeyboardEvent): boolean {
   if (combo === k.next) return void actions.navigate(true), true;
   if (combo === k.toggle_view) return toggleMode(), true;
   if (combo === k.toggle_paths) return void togglePaths(), true;
+  if (combo === k.rediagnose) return actions.rediagnose(), true;
   if (combo === "Escape" && c.general.view_mode === "focus") return setMode("sidebar"), true;
   if (!s.current) return false;
   if (combo === k.skip) return void actions.perform({ kind: "skip" }), true;

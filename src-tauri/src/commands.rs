@@ -2,11 +2,19 @@
 //!
 //! 画面はキー入力をここへ渡すだけで、ファイル操作の整合性は `fileops` が持つ。
 
+use crate::config::ai::AiBackend;
 use crate::config::{self, Config, Issue};
 use crate::decoder::{self, FormatSupport};
 use crate::fileops::{self, Action, ConflictChoice, FinalizeReport, HistoryKind, PendingDeletion, Session, Status};
 use crate::scanner::{self, ScanOptions};
 use crate::state::{location, AppState, SessionState};
+use crate::suggest::choices::build_choices;
+use crate::suggest::factory::make_suggester;
+use crate::suggest::hash::hash_file;
+use crate::suggest::service::SuggestionService;
+use crate::suggest::systemone::SystemOneSuggester;
+use crate::suggest::view::{build_view, SuggestionView};
+use crate::suggest::SuggestError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -75,6 +83,10 @@ fn apply_config(state: &AppState, config: Config, load_error: Option<String>) {
     let trash = config.general.delete_folder.clone();
     {
         let mut c = state.config();
+        // AI の設定が変わったときだけバックエンドを作り直す（モデルの読み込み直しを避ける）
+        if c.config.ai != config.ai {
+            state.suggest.set_suggester(make_suggester(&config.ai));
+        }
         c.config = config;
         c.load_error = load_error;
     }
@@ -284,7 +296,10 @@ fn with_session<T>(
     let mut guard = state.session();
     let s = guard.as_mut().ok_or("仕分け元フォルダが読み込まれていません")?;
     let result = f(s);
+    // 振り分けの確定・取り消しを、AI 候補の記録（ユーザーが最終的に振り分けた先）へ渡す
+    state.outcomes.send(s.generation, s.session.take_events());
     state.schedule_prefetch(s, prefetch);
+    state.schedule_diagnosis_prefetch(s);
     let view = session_view(state, s);
     Ok((result?, view))
 }
@@ -442,6 +457,83 @@ pub async fn image_info(state: State<'_, AppState>, generation: u64, index: usiz
     .map_err(|e| e.to_string())?
 }
 
+// ---- AI 候補 ----
+
+/// 1 枚の画像の候補を作る（重い処理なので呼び出し側でブロッキングスレッドに載せる）
+fn suggestions_for(
+    svc: &SuggestionService,
+    registry: &decoder::Registry,
+    path: &Path,
+    config: &Config,
+    force: bool,
+) -> SuggestionView {
+    let backend = svc.backend();
+    if backend == AiBackend::Off {
+        // 使わない設定のときは、画像を読みにも行かない
+        return build_view(&config.ai, &config.targets, backend, Err(SuggestError::Disabled));
+    }
+    let choices = build_choices(&config.targets, backend);
+    let result = hash_file(path)
+        .map_err(|e| SuggestError::Failed(format!("画像を読み込めません: {e}")))
+        .and_then(|hash| svc.diagnose(&hash, || registry.decode(path), &choices, force));
+    build_view(&config.ai, &config.targets, backend, result)
+}
+
+/// 表示中などの画像の AI 候補。`force` なら診断し直す（再診断キー）。
+/// キャッシュにあればリクエストは出さない。AI 候補が使えなくても仕分け自体は続けられる。
+#[tauri::command]
+pub async fn get_suggestions(
+    state: State<'_, AppState>,
+    generation: u64,
+    index: usize,
+    force: bool,
+) -> CmdResult<SuggestionView> {
+    let path = {
+        let guard = state.session();
+        let s = guard.as_ref().filter(|s| s.generation == generation).ok_or("古い画面からの要求です")?;
+        let item = s.session.items().get(index).ok_or("画像が見つかりません")?;
+        location(&item.path, &item.status).to_path_buf()
+    };
+    let config = state.config().config.clone();
+    let (svc, registry) = (state.suggest.clone(), state.registry.clone());
+    tauri::async_runtime::spawn_blocking(move || suggestions_for(&svc, &registry, &path, &config, force))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// System One の API キーの検出状態（キーの値は返さない）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiKeyStatus {
+    env_name: String,
+    detected: bool,
+}
+
+#[tauri::command]
+pub fn ai_key_status(state: State<'_, AppState>) -> AiKeyStatus {
+    let cfg = state.config().config.ai.systemone.clone();
+    let env_name = cfg.api_key_env.clone();
+    AiKeyStatus { detected: SystemOneSuggester::new(cfg).key_detected(), env_name }
+}
+
+/// System One への接続テスト（合成した小さな画像を 1 回だけ送る）。成功したらモデル名を返す
+#[tauri::command]
+pub async fn test_systemone(state: State<'_, AppState>) -> CmdResult<String> {
+    let cfg = state.config().config.ai.systemone.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        SystemOneSuggester::new(cfg).test_connection().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 画像を外部へ送ることへの同意を保存する（false で取り消し）。同意するまで System One は使われない
+#[tauri::command]
+pub fn set_external_consent(state: State<'_, AppState>, consent: bool) -> ConfigPayload {
+    remember(&state, |c| c.ai.systemone.external_consent = consent);
+    config_payload(&state)
+}
+
 // ---- 終了時の削除確認 ----
 
 #[derive(Serialize)]
@@ -490,4 +582,171 @@ pub fn finalize_and_exit(app: AppHandle, state: State<'_, AppState>, delete: boo
 pub fn exit_app(app: AppHandle, state: State<'_, AppState>) {
     state.allow_exit.store(true, Ordering::SeqCst);
     app.exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::suggest::choices::target_id;
+
+    fn app() -> (tempfile::TempDir, AppState, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let (src, dest) = (tmp.path().join("src"), tmp.path().join("dest"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(src.join("a.jpg"), "image a").unwrap();
+        std::fs::write(src.join("b.jpg"), "image b").unwrap();
+        let state = AppState::new(tmp.path().join("config.toml"), tmp.path().join("data"));
+        let session = Session::new(Arc::new(fileops::RealFs), vec![src.join("a.jpg"), src.join("b.jpg")], None);
+        *state.session() = Some(SessionState { session, generation: 1, source: src.clone(), unsupported: Vec::new() });
+        (tmp, state, src, dest)
+    }
+
+    fn recorded(state: &AppState, dest: &Path) -> Vec<String> {
+        state.outcomes.flush();
+        state.suggest.outcome_hashes(&target_id(dest)).unwrap()
+    }
+
+    #[test]
+    fn moving_and_undoing_through_the_session_updates_the_recorded_outcomes() {
+        let (_tmp, state, _src, dest) = app();
+        let mv = || Action::MoveTo { dir: dest.clone(), label: "dest".into() };
+
+        with_session(&state, |s| s.session.apply(mv()).map_err(|e| e.to_string())).unwrap();
+        assert_eq!(recorded(&state, &dest), [blake3::hash(b"image a").to_hex().to_string()]);
+
+        with_session(&state, |s| s.session.apply(Action::Skip).map_err(|e| e.to_string())).unwrap();
+        assert_eq!(recorded(&state, &dest).len(), 1, "スキップは振り分け先の記録にならない");
+
+        with_session(&state, |s| s.session.undo().map_err(|e| e.to_string())).unwrap(); // スキップを取り消す
+        assert_eq!(recorded(&state, &dest).len(), 1);
+        with_session(&state, |s| s.session.undo().map_err(|e| e.to_string())).unwrap(); // 移動を取り消す
+        assert!(recorded(&state, &dest).is_empty(), "Undo で記録も取り消される");
+    }
+
+    fn write_png(path: &Path) {
+        image::DynamicImage::new_rgb8(4, 4).save(path).unwrap();
+    }
+
+    #[test]
+    fn suggestions_use_the_cache_for_the_same_content_even_after_the_file_moves() {
+        let (tmp, state, src, dest) = app();
+        let img = src.join("p.png");
+        write_png(&img);
+        let mut config = Config::default();
+        config.targets.push(config::Target {
+            key: "1".into(),
+            name: "dest".into(),
+            path: dest.clone(),
+            description: String::new(),
+            exclude_external: false,
+        });
+        state
+            .suggest
+            .set_suggester(Arc::new(crate::suggest::dummy::DummySuggester { kind: crate::suggest::ScoreKind::Match }));
+        config.ai.local.low = 0.0;
+
+        let first = suggestions_for(&state.suggest, &state.registry, &img, &config, false);
+        assert_eq!(first.state, crate::suggest::view::ViewState::Ready);
+        assert!(!first.from_cache);
+        assert_eq!(first.cards.len(), 1);
+
+        // 別の場所へ移動・改名しても中身が同じなので再診断しない
+        let moved = tmp.path().join("moved.png");
+        std::fs::rename(&img, &moved).unwrap();
+        let second = suggestions_for(&state.suggest, &state.registry, &moved, &config, false);
+        assert!(second.from_cache);
+        let forced = suggestions_for(&state.suggest, &state.registry, &moved, &config, true);
+        assert!(!forced.from_cache, "再診断キーなら診断し直す");
+    }
+
+    #[test]
+    fn suggestions_report_a_missing_file_as_failed() {
+        let (tmp, state, _src, _dest) = app();
+        state
+            .suggest
+            .set_suggester(Arc::new(crate::suggest::dummy::DummySuggester { kind: crate::suggest::ScoreKind::Match }));
+        let v =
+            suggestions_for(&state.suggest, &state.registry, &tmp.path().join("none.png"), &Config::default(), false);
+        assert!(matches!(v.state, crate::suggest::view::ViewState::Failed { .. }), "{:?}", v.state);
+    }
+
+    #[test]
+    fn suggestions_when_off_do_not_even_read_the_file() {
+        let (tmp, state, _src, _dest) = app();
+        state.suggest.set_suggester(Arc::new(crate::suggest::dummy::OffSuggester));
+        let v =
+            suggestions_for(&state.suggest, &state.registry, &tmp.path().join("none.png"), &Config::default(), false);
+        assert_eq!(v.state, crate::suggest::view::ViewState::Off);
+    }
+
+    #[test]
+    fn upcoming_images_are_diagnosed_ahead_of_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (src, dest) = (tmp.path().join("src"), tmp.path().join("dest"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dest).unwrap();
+        let images: Vec<PathBuf> = (0..4)
+            .map(|i| {
+                let p = src.join(format!("{i}.png"));
+                image::DynamicImage::new_luma8(2 + i, 2).save(&p).unwrap(); // 中身を変えてハッシュを分ける
+                p
+            })
+            .collect();
+        let state = AppState::new(tmp.path().join("config.toml"), tmp.path().join("data"));
+        {
+            let mut c = state.config();
+            c.config.targets.push(config::Target {
+                key: "1".into(),
+                name: "dest".into(),
+                path: dest.clone(),
+                description: String::new(),
+                exclude_external: false,
+            });
+            c.config.ai.prefetch = 2;
+        }
+        state
+            .suggest
+            .set_suggester(Arc::new(crate::suggest::dummy::DummySuggester { kind: crate::suggest::ScoreKind::Match }));
+        let session = Session::new(Arc::new(fileops::RealFs), images.clone(), None);
+        *state.session() = Some(SessionState { session, generation: 1, source: src, unsupported: Vec::new() });
+
+        with_session(&state, |_| Ok(())).unwrap(); // 現在は 0 枚目。先読みは 1・2 枚目
+        let choices = build_choices(&state.config().config.targets, state.suggest.backend());
+        let cached = |i: usize| {
+            let hash = hash_file(&images[i]).unwrap();
+            state.suggest.cached(&hash, &choices).unwrap().is_some()
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !(cached(1) && cached(2)) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(cached(1) && cached(2), "数枚先は先に診断される");
+        assert!(!cached(0), "表示中の画像は画面が直接求める");
+        assert!(!cached(3), "prefetch の範囲外は診断しない");
+    }
+
+    #[test]
+    fn consent_is_persisted_and_gates_the_external_backend() {
+        let (_tmp, state, _src, _dest) = app();
+        remember(&state, |c| c.ai.backend = AiBackend::Systemone);
+        assert_eq!(state.suggest.backend(), AiBackend::Systemone);
+        assert!(!state.suggest.available(), "同意前は診断を試みない（画像を読みにも行かない）");
+
+        remember(&state, |c| c.ai.systemone.external_consent = true);
+        assert!(state.suggest.available(), "同意すると使える");
+        let saved = config::load_or_create(&state.config_path).unwrap();
+        assert!(saved.ai.systemone.external_consent, "同意はファイルに保存される");
+
+        remember(&state, |c| c.ai.systemone.external_consent = false);
+        assert!(!state.suggest.available(), "同意を取り消すと再び使えなくなる");
+        assert!(!config::load_or_create(&state.config_path).unwrap().ai.systemone.external_consent);
+    }
+
+    #[test]
+    fn delete_never_records_an_outcome() {
+        let (_tmp, state, _src, dest) = app();
+        with_session(&state, |s| s.session.apply(Action::Delete).map_err(|e| e.to_string())).unwrap();
+        assert!(recorded(&state, &dest).is_empty());
+    }
 }

@@ -2,6 +2,7 @@
 //!
 //! GUI の設定画面と TOML ファイルの両方から編集でき、GUI での変更は TOML に書き戻す。
 
+pub mod ai;
 pub mod keys;
 
 use keys::{reserved_reason, KeyCombo};
@@ -91,6 +92,8 @@ pub struct ActionKeys {
     pub toggle_view: String,
     /// 振り分け先リストのパス表示の切り替え
     pub toggle_paths: String,
+    /// 表示中の 1 枚だけ AI 候補を診断し直す
+    pub rediagnose: String,
 }
 
 impl Default for ActionKeys {
@@ -103,13 +106,14 @@ impl Default for ActionKeys {
             next: "Right".into(),
             // 単独キーは振り分けに使えるよう空けておき、表示の切り替えは組み合わせキーにする
             toggle_view: "Ctrl+Shift+F".into(),
-            toggle_paths: "Ctrl+Shift+P".into(),
+            toggle_paths: "Ctrl+Shift+O".into(),
+            rediagnose: "Ctrl+Shift+D".into(),
         }
     }
 }
 
 impl ActionKeys {
-    fn entries(&self) -> [(&'static str, &str); 7] {
+    fn entries(&self) -> [(&'static str, &str); 8] {
         [
             ("スキップ", &self.skip),
             ("削除", &self.delete),
@@ -118,10 +122,11 @@ impl ActionKeys {
             ("次の画像", &self.next),
             ("表示モード切り替え", &self.toggle_view),
             ("パス表示の切り替え", &self.toggle_paths),
+            ("再診断", &self.rediagnose),
         ]
     }
 
-    fn entries_mut(&mut self) -> [&mut String; 7] {
+    fn entries_mut(&mut self) -> [&mut String; 8] {
         [
             &mut self.skip,
             &mut self.delete,
@@ -130,6 +135,7 @@ impl ActionKeys {
             &mut self.next,
             &mut self.toggle_view,
             &mut self.toggle_paths,
+            &mut self.rediagnose,
         ]
     }
 }
@@ -142,6 +148,16 @@ pub struct Target {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     pub path: PathBuf,
+    /// AI 候補用の説明文。ラベル名より、何を入れるフォルダかの条件を書く
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// true なら、このフォルダを外部 API（systemone）への選択肢に含めない
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub exclude_external: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Target {
@@ -157,7 +173,7 @@ impl Target {
 }
 
 /// 設定ファイルの形式のバージョン。既定値を変えたときの移行に使う
-pub const CONFIG_VERSION: u32 = 1;
+pub const CONFIG_VERSION: u32 = 2;
 
 fn legacy_version() -> u32 {
     0
@@ -172,6 +188,8 @@ pub struct Config {
     pub general: General,
     pub keys: ActionKeys,
     pub targets: Vec<Target>,
+    /// AI 振り分け候補（MVP 後の拡張）
+    pub ai: ai::Ai,
 }
 
 impl Default for Config {
@@ -181,6 +199,7 @@ impl Default for Config {
             general: General::default(),
             keys: ActionKeys::default(),
             targets: Vec::new(),
+            ai: ai::Ai::default(),
         }
     }
 }
@@ -226,6 +245,7 @@ impl Config {
                 t.key = c.to_string();
             }
             t.name = t.name.trim().to_string();
+            t.description = t.description.trim().to_string();
         }
         let empty = |p: &Option<PathBuf>| p.as_ref().is_some_and(|p| p.as_os_str().is_empty());
         if empty(&self.general.delete_folder) {
@@ -235,6 +255,7 @@ impl Config {
             self.general.source_dir = None;
         }
         self.general.prefetch = self.general.prefetch.clamp(0, 16);
+        self.ai.normalize();
     }
 
     /// キーの重複・予約キーとの衝突・パスの問題を調べる
@@ -265,6 +286,10 @@ impl Config {
         dups.sort();
         for (key, owners) in dups {
             issues.push(Issue::error(format!("キー {key} が重複しています: {}", owners.join("、")), Some(key)));
+        }
+
+        for (is_error, message) in self.ai.problems() {
+            issues.push(if is_error { Issue::error(message, None) } else { Issue::warning(message, None) });
         }
 
         let delete_folder = self.general.delete_folder.as_deref();
@@ -351,6 +376,13 @@ impl Config {
                 self.keys.toggle_view = ActionKeys::default().toggle_view;
             }
         }
+        if self.version < 2 {
+            // v1 の既定だった Ctrl+Shift+P は WebView2 の印刷と衝突しうるため、既定の Ctrl+Shift+O へ移す。
+            // 自分で別のキーに変えていた場合はそのまま
+            if self.keys.toggle_paths == "Ctrl+Shift+P" {
+                self.keys.toggle_paths = ActionKeys::default().toggle_paths;
+            }
+        }
         self.version = CONFIG_VERSION;
     }
 }
@@ -412,7 +444,13 @@ mod tests {
     use super::*;
 
     fn target(key: &str, name: &str, path: &Path) -> Target {
-        Target { key: key.into(), name: name.into(), path: path.to_path_buf() }
+        Target {
+            key: key.into(),
+            name: name.into(),
+            path: path.to_path_buf(),
+            description: String::new(),
+            exclude_external: false,
+        }
     }
 
     #[test]
@@ -452,7 +490,7 @@ mod tests {
         let c = parse("[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
         assert_eq!(c.version, CONFIG_VERSION);
         assert_eq!(c.keys.toggle_view, "Ctrl+Shift+F");
-        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+P", "新しい項目は既定値");
+        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+O", "新しい項目は既定値");
         assert!(c.general.show_paths);
 
         // 自分で変えていたキーはそのまま
@@ -460,8 +498,80 @@ mod tests {
         assert_eq!(c.keys.toggle_view, "Alt+V");
 
         // 最新の形式で F を選んでいる場合は変えない
-        let c = parse("version = 1\n[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
+        let c = parse("version = 2\n[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
         assert_eq!(c.keys.toggle_view, "F");
+    }
+
+    #[test]
+    fn v1_default_path_toggle_key_moves_off_the_webview_print_key() {
+        let c = parse("version = 1\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.version, CONFIG_VERSION);
+        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+O");
+
+        // 自分で変えていたキーはそのまま
+        let c = parse("version = 1\n[keys]\ntoggle_paths = \"Alt+P\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.toggle_paths, "Alt+P");
+
+        // 最新の形式で P を選んだ場合は尊重する（警告は出る）
+        let c = parse("version = 2\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+P");
+        assert!(c
+            .validate()
+            .iter()
+            .any(|i| i.severity == Severity::Warning && i.key.as_deref() == Some("Ctrl+Shift+P")));
+        assert!(Config::default()
+            .validate()
+            .iter()
+            .all(|i| i.severity != Severity::Warning || !i.message.contains("予約")));
+    }
+
+    #[test]
+    fn target_ai_fields_are_optional_and_roundtrip() {
+        let text = r#"
+            [[targets]]
+            key = "1"
+            path = "/photos/風景"
+
+            [[targets]]
+            key = "2"
+            path = "/photos/書類"
+            description = "  レシートや書類のスキャン  "
+            exclude_external = true
+        "#;
+        let c = parse(text, Path::new("x")).unwrap();
+        assert_eq!(c.targets[0].description, "");
+        assert!(!c.targets[0].exclude_external, "書かなければ外部送信の対象");
+        assert_eq!(c.targets[1].description, "レシートや書類のスキャン", "前後の空白は取り除く");
+        assert!(c.targets[1].exclude_external);
+
+        let again = parse(&to_toml(&c), Path::new("x")).unwrap();
+        assert_eq!(again, c);
+        let first = to_toml(&c).split("[[targets]]").nth(1).unwrap().to_string();
+        assert!(!first.contains("description") && !first.contains("exclude_external"), "既定値は書き出さない");
+    }
+
+    #[test]
+    fn ai_section_roundtrips_and_is_validated() {
+        let c = parse("[ai]\nbackend = \"off\"\n[ai.local]\nhigh = 0.9\n", Path::new("x")).unwrap();
+        assert_eq!(c.ai.backend, ai::AiBackend::Off);
+        assert_eq!(c.ai.local.high, 0.9);
+        assert_eq!(parse(&to_toml(&c), Path::new("x")).unwrap(), c);
+        assert_eq!(parse("", Path::new("x")).unwrap().ai, ai::Ai::default(), "古い設定ファイルは既定値で読める");
+
+        let mut bad = Config::default();
+        bad.ai.local.low = 0.9;
+        assert!(Config::has_errors(&bad.validate()), "しきい値の逆転は保存できない");
+    }
+
+    #[test]
+    fn rediagnose_key_defaults_and_conflicts_are_detected() {
+        assert_eq!(Config::default().keys.rediagnose, "Ctrl+Shift+D");
+        let c = parse("[keys]\nrediagnose = \"shift+ctrl+d\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.rediagnose, "Ctrl+Shift+D");
+        // 振り分けキーと重複したら保存できない
+        let mut c = Config::default();
+        c.targets.push(target("Ctrl+Shift+D", "かぶり", Path::new("/photos")));
+        assert!(c.validate().iter().any(|i| i.severity == Severity::Error && i.key.as_deref() == Some("Ctrl+Shift+D")));
     }
 
     #[test]

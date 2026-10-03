@@ -59,3 +59,31 @@ MVP（手動仕分け）を実装した。詳細は PR と各コミットを参�
 - HEIC・AVIF のライブラリは、軽量性を保てるなら同梱。重くなるならプラグイン扱い（利用者がアプリ設定フォルダ内の `plugins` などに置けば有効化）。未導入形式は読み込み時にスキップして表示
 - AI 拡張では、フォルダ名が日本語中心のため、日本語対応の CLIP 系モデルか、フォルダごとの英語説明文の設定が必要。判定は先読み・一括で行い表示を待たせない。端末上で動かすことを優先
 - 月鏡のチェックリスト（タグ）型分類と、Typict の「予約→実行」型は、AI の「提案→確認」UI（一括確認画面）と相性がよい
+
+## AI 候補機能フェーズ（2026-10-03 着手）
+
+仕様は `requirements.md` の「拡張計画」、背景は `ai-suggestion-handoff.md`、モックは `ui-mockups/ai/`。
+
+- 着手範囲: 土台（Suggester・設定・SQLite キャッシュ）→ 候補ストリップ UI → systemone → local → 設定画面・キー衝突対策 → CI・説明ページ
+- 「該当なし」カード＝Space（スキップ）は開発者が確認済み（2026-10-03）
+- 既定の `toggle_paths` は WebView2 の印刷と衝突しうる Ctrl+Shift+P から Ctrl+Shift+O へ変更（CONFIG_VERSION 2、旧既定のままの設定だけ自動で移行）
+- 一括確認画面（`future-batch-review.html`）は実装しない
+- Phase 1（土台）の実装で決めたこと:
+  - 振り分け先の識別子は、正規化したフルパス（`suggest/choices.rs::target_id`）。フォルダを改名・移動すると別の振り分け先として扱い、キャッシュは引き継がない
+  - 診断キャッシュ・履歴は `<アプリのデータフォルダ>/suggest.sqlite`（開けない場合はメモリ上のみで動作）。診断は画像の中身の BLAKE3 ハッシュで引く（SMB 上では初回にファイル全体を読む）
+  - `outcomes`（最終的な振り分け先）は、ファイル操作の `SortEvent`（振り分け確定・Undo）を単一ワーカーが記録。削除・スキップ・「既存を残す」は記録しない
+  - 外部送信の同意は `suggest/factory.rs` に集約（未同意なら外部バックエンドを作らない）。送信除外のフォルダは選択肢・候補カードのどちらにも出さない
+  - 診断の先読みは表示用の先読みとは別の単一ワーカー（外部 API への同時リクエストを増やさない）
+- Phase 3（systemone）で確認・決めたこと（2026-10-03、Cloudflare の公式モデルページと schema-input.json / schema-output.json で確認）:
+  - リクエスト: `model`・`state`・`questions` ＋ `images`（`{content_type, base64}`）。質問は choice 型 1 問（ID `dest`）。選択肢の ID は `f0`・`f1`…と `none` で、フォルダ名・パスは API に渡さない
+  - レスポンス: `answers.dest = { type: "choice", choice, probabilities{選択肢 ID: 確率}, confidence }`、`usage = { input_tokens, output_tokens }`。形が違うときはエラーにし、推測で補わない
+  - `model` はエンドポイント末尾（`clef` / `clef-flash`）から判別し、設定の `model` を明示した場合は一致を検証（食い違うと API が 400）。エンドポイントの `{account}` が未置換なら送らない。https 以外には送らない（ローカルの自前ホスト確認用に localhost の http のみ許可）
+  - HTTP クライアントは `ureq`（rustls）。テストは Transport を差し替えたモックと、ローカル TCP サーバーのみで、外部 API は叩かない。**実 API での確認は未実施（開発者の API キーで手動確認が必要）**
+  - 接続テストは合成した 8×8 の白画像と仮の選択肢だけを送る
+  - 未実装（Phase 5）: 同意ダイアログ、設定画面の System One 項目（コマンドは `set_external_consent` / `ai_key_status` / `test_systemone` を用意済み）
+- Phase 2・5 の進捗（2026-10-03）:
+  - 仕分け画面に候補ストリップ（local は「一致度」、systemone は確率％＋「該当なし」＝Space）、ヘッダーの AI バッジ（外部送信時は橙）、未評価フォルダの再診断帯（失敗時のみ再診断ボタン）、キー割り当て一覧の強調を実装。静的モックと同じ構成であることを、Tauri をモックした確認ページ（Chromium のスクリーンショット）で確認した。**実際の Tauri アプリ（`npm run tauri dev`）での目視確認は未実施**
+  - 設定画面に「AI 候補」を追加。System One を選ぶと同意ダイアログを出し、同意は下書きに入れて「保存」で永続化
+  - `tauri-plugin-prevent-default` を導入（Tab / Shift+Tab は設定画面の操作のため無効化しない）。**Windows 側（`platform-windows` の設定）は未ビルド・未確認**
+  - 未実装: 設定画面の的中率・診断履歴の表示、local バックエンド（Phase 4）、CI への反映と説明ページ（Phase 6）
+- Phase 4（local）で決まったこと: ONNX Runtime とモデルは**初回に自動ダウンロード**（開発者の選択）。第一候補は日本語対応モデル（rinna/japanese-clip-vit-b-16 など。ONNX 化の方法と配布元は未調査）。取得元・ライセンス・ハッシュ検証・失敗時の扱いを決めてから実装する

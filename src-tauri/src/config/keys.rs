@@ -150,9 +150,10 @@ pub fn reserved_reason(combo: &KeyCombo) -> Option<&'static str> {
     Some(match s.as_str() {
         "F5" | "Ctrl+R" | "Ctrl+Shift+R" | "Ctrl+F5" => "WebView の再読み込み",
         "F12" | "Ctrl+Shift+I" | "Ctrl+Shift+J" | "Ctrl+Shift+C" => "WebView の開発者ツール",
-        "Ctrl+P" => "WebView の印刷",
+        "Ctrl+P" | "Ctrl+Shift+P" => "WebView の印刷",
         "Ctrl+F" | "F3" | "Ctrl+G" | "Ctrl+Shift+G" => "WebView の検索",
         "Ctrl+U" => "WebView のソース表示",
+        "Ctrl+Shift+U" | "Ctrl+Shift+E" => "Linux の入力機能（IBus / GTK）",
         "F7" => "WebView のキャレットブラウズ",
         "Alt+Left" | "Alt+Right" | "Alt+Home" => "WebView の戻る／進む",
         "Alt+F4" => "OS のウィンドウを閉じる",
@@ -205,5 +206,19 @@ mod tests {
         assert!(reserved_reason(&KeyCombo::parse("ctrl+r").unwrap()).is_some());
         assert!(reserved_reason(&KeyCombo::parse("alt+left").unwrap()).is_some());
         assert!(reserved_reason(&KeyCombo::parse("Ctrl+1").unwrap()).is_none());
+    }
+
+    #[test]
+    fn warns_about_ctrl_shift_keys_to_avoid() {
+        // WebView2: G・I・R・P、Linux の IBus / GTK: U・E
+        for k in ["G", "I", "R", "P", "U", "E"] {
+            let combo = KeyCombo::parse(&format!("Ctrl+Shift+{k}")).unwrap();
+            assert!(reserved_reason(&combo).is_some(), "Ctrl+Shift+{k}");
+        }
+        // 再診断キーの既定 D と、表示切り替えの F は衝突しない
+        for k in ["D", "F"] {
+            let combo = KeyCombo::parse(&format!("Ctrl+Shift+{k}")).unwrap();
+            assert!(reserved_reason(&combo).is_none(), "Ctrl+Shift+{k}");
+        }
     }
 }
