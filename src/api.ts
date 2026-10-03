@@ -9,6 +9,10 @@ export interface Target {
   key: string;
   name: string;
   path: string;
+  /** AI 候補用の説明文 */
+  description?: string;
+  /** true なら外部 API への選択肢に含めない */
+  exclude_external?: boolean;
 }
 
 /** TOML の設定そのもの（キー名は TOML と同じ snake_case） */

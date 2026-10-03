@@ -142,6 +142,16 @@ pub struct Target {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     pub path: PathBuf,
+    /// AI 候補用の説明文。ラベル名より、何を入れるフォルダかの条件を書く
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// true なら、このフォルダを外部 API（systemone）への選択肢に含めない
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub exclude_external: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Target {
@@ -226,6 +236,7 @@ impl Config {
                 t.key = c.to_string();
             }
             t.name = t.name.trim().to_string();
+            t.description = t.description.trim().to_string();
         }
         let empty = |p: &Option<PathBuf>| p.as_ref().is_some_and(|p| p.as_os_str().is_empty());
         if empty(&self.general.delete_folder) {
@@ -412,7 +423,13 @@ mod tests {
     use super::*;
 
     fn target(key: &str, name: &str, path: &Path) -> Target {
-        Target { key: key.into(), name: name.into(), path: path.to_path_buf() }
+        Target {
+            key: key.into(),
+            name: name.into(),
+            path: path.to_path_buf(),
+            description: String::new(),
+            exclude_external: false,
+        }
     }
 
     #[test]
@@ -462,6 +479,31 @@ mod tests {
         // 最新の形式で F を選んでいる場合は変えない
         let c = parse("version = 1\n[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
         assert_eq!(c.keys.toggle_view, "F");
+    }
+
+    #[test]
+    fn target_ai_fields_are_optional_and_roundtrip() {
+        let text = r#"
+            [[targets]]
+            key = "1"
+            path = "/photos/風景"
+
+            [[targets]]
+            key = "2"
+            path = "/photos/書類"
+            description = "  レシートや書類のスキャン  "
+            exclude_external = true
+        "#;
+        let c = parse(text, Path::new("x")).unwrap();
+        assert_eq!(c.targets[0].description, "");
+        assert!(!c.targets[0].exclude_external, "書かなければ外部送信の対象");
+        assert_eq!(c.targets[1].description, "レシートや書類のスキャン", "前後の空白は取り除く");
+        assert!(c.targets[1].exclude_external);
+
+        let again = parse(&to_toml(&c), Path::new("x")).unwrap();
+        assert_eq!(again, c);
+        let first = to_toml(&c).split("[[targets]]").nth(1).unwrap().to_string();
+        assert!(!first.contains("description") && !first.contains("exclude_external"), "既定値は書き出さない");
     }
 
     #[test]
