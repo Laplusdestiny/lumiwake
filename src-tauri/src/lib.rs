@@ -25,7 +25,8 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol(protocol::SCHEME, protocol::handle)
         .setup(|app| {
             let config_path = app.path().app_config_dir()?.join("config.toml");
-            app.manage(AppState::new(config_path));
+            let data_dir = app.path().app_data_dir()?;
+            app.manage(AppState::new(config_path, data_dir));
             Ok(())
         })
         .on_window_event(|window, event| {

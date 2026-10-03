@@ -7,6 +7,7 @@ use crate::decoder::{self, FormatSupport};
 use crate::fileops::{self, Action, ConflictChoice, FinalizeReport, HistoryKind, PendingDeletion, Session, Status};
 use crate::scanner::{self, ScanOptions};
 use crate::state::{location, AppState, SessionState};
+use crate::suggest::factory::make_suggester;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -75,6 +76,10 @@ fn apply_config(state: &AppState, config: Config, load_error: Option<String>) {
     let trash = config.general.delete_folder.clone();
     {
         let mut c = state.config();
+        // AI の設定が変わったときだけバックエンドを作り直す（モデルの読み込み直しを避ける）
+        if c.config.ai != config.ai {
+            state.suggest.set_suggester(make_suggester(&config.ai));
+        }
         c.config = config;
         c.load_error = load_error;
     }
@@ -284,6 +289,8 @@ fn with_session<T>(
     let mut guard = state.session();
     let s = guard.as_mut().ok_or("仕分け元フォルダが読み込まれていません")?;
     let result = f(s);
+    // 振り分けの確定・取り消しを、AI 候補の記録（ユーザーが最終的に振り分けた先）へ渡す
+    state.outcomes.send(s.generation, s.session.take_events());
     state.schedule_prefetch(s, prefetch);
     let view = session_view(state, s);
     Ok((result?, view))
@@ -490,4 +497,52 @@ pub fn finalize_and_exit(app: AppHandle, state: State<'_, AppState>, delete: boo
 pub fn exit_app(app: AppHandle, state: State<'_, AppState>) {
     state.allow_exit.store(true, Ordering::SeqCst);
     app.exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::suggest::choices::target_id;
+
+    fn app() -> (tempfile::TempDir, AppState, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let (src, dest) = (tmp.path().join("src"), tmp.path().join("dest"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(src.join("a.jpg"), "image a").unwrap();
+        std::fs::write(src.join("b.jpg"), "image b").unwrap();
+        let state = AppState::new(tmp.path().join("config.toml"), tmp.path().join("data"));
+        let session = Session::new(Arc::new(fileops::RealFs), vec![src.join("a.jpg"), src.join("b.jpg")], None);
+        *state.session() = Some(SessionState { session, generation: 1, source: src.clone(), unsupported: Vec::new() });
+        (tmp, state, src, dest)
+    }
+
+    fn recorded(state: &AppState, dest: &Path) -> Vec<String> {
+        state.outcomes.flush();
+        state.suggest.outcome_hashes(&target_id(dest)).unwrap()
+    }
+
+    #[test]
+    fn moving_and_undoing_through_the_session_updates_the_recorded_outcomes() {
+        let (_tmp, state, _src, dest) = app();
+        let mv = || Action::MoveTo { dir: dest.clone(), label: "dest".into() };
+
+        with_session(&state, |s| s.session.apply(mv()).map_err(|e| e.to_string())).unwrap();
+        assert_eq!(recorded(&state, &dest), [blake3::hash(b"image a").to_hex().to_string()]);
+
+        with_session(&state, |s| s.session.apply(Action::Skip).map_err(|e| e.to_string())).unwrap();
+        assert_eq!(recorded(&state, &dest).len(), 1, "スキップは振り分け先の記録にならない");
+
+        with_session(&state, |s| s.session.undo().map_err(|e| e.to_string())).unwrap(); // スキップを取り消す
+        assert_eq!(recorded(&state, &dest).len(), 1);
+        with_session(&state, |s| s.session.undo().map_err(|e| e.to_string())).unwrap(); // 移動を取り消す
+        assert!(recorded(&state, &dest).is_empty(), "Undo で記録も取り消される");
+    }
+
+    #[test]
+    fn delete_never_records_an_outcome() {
+        let (_tmp, state, _src, dest) = app();
+        with_session(&state, |s| s.session.apply(Action::Delete).map_err(|e| e.to_string())).unwrap();
+        assert!(recorded(&state, &dest).is_empty());
+    }
 }

@@ -3,6 +3,10 @@
 use crate::config::{self, Config};
 use crate::decoder::{make_preview, PrefetchJob, Prefetcher, PreviewCache, Registry};
 use crate::fileops::{Session, Status};
+use crate::suggest::factory::make_suggester;
+use crate::suggest::outcomes::OutcomeRecorder;
+use crate::suggest::service::SuggestionService;
+use crate::suggest::store::Store;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -33,13 +37,18 @@ pub struct AppState {
     pub registry: Arc<Registry>,
     pub cache: Arc<PreviewCache>,
     prefetcher: Prefetcher,
+    /// AI 候補の診断キャッシュ・履歴
+    pub suggest: Arc<SuggestionService>,
+    /// 振り分けの確定・取り消しを診断サービスへ記録する
+    pub outcomes: OutcomeRecorder,
     /// true のときだけウィンドウを閉じてよい（削除予定の確認を済ませた）
     pub allow_exit: AtomicBool,
     next_generation: AtomicU64,
 }
 
 impl AppState {
-    pub fn new(config_path: PathBuf) -> Self {
+    /// `data_dir` はアプリのデータフォルダ（診断キャッシュの保存先）
+    pub fn new(config_path: PathBuf, data_dir: PathBuf) -> Self {
         let (config, load_error) = match config::load_or_create(&config_path) {
             Ok(c) => (c, None),
             Err(e) => (Config::default(), Some(e.to_string())),
@@ -50,6 +59,12 @@ impl AppState {
         let workers = std::thread::available_parallelism().map(|n| n.get().clamp(1, 3)).unwrap_or(2);
         let prefetcher =
             Prefetcher::start(workers, cache.clone(), Arc::new(move |p: &Path| make_preview(&loader_registry, p)));
+        // 診断キャッシュを開けなくても仕分けは続けられるよう、その場合はメモリ上だけで動かす
+        let store = Store::open(&data_dir.join("suggest.sqlite"))
+            .or_else(|_| Store::open_in_memory())
+            .expect("メモリ上の SQLite は常に開ける");
+        let suggest = Arc::new(SuggestionService::new(store, make_suggester(&config.ai)));
+        let outcomes = OutcomeRecorder::start(suggest.clone());
         AppState {
             config_path,
             config: Mutex::new(ConfigState { config, load_error }),
@@ -58,6 +73,8 @@ impl AppState {
             registry,
             cache,
             prefetcher,
+            suggest,
+            outcomes,
             allow_exit: AtomicBool::new(false),
             next_generation: AtomicU64::new(1),
         }
