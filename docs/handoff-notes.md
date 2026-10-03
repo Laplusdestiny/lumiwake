@@ -81,3 +81,9 @@ MVP（手動仕分け）を実装した。詳細は PR と各コミットを参�
   - HTTP クライアントは `ureq`（rustls）。テストは Transport を差し替えたモックと、ローカル TCP サーバーのみで、外部 API は叩かない。**実 API での確認は未実施（開発者の API キーで手動確認が必要）**
   - 接続テストは合成した 8×8 の白画像と仮の選択肢だけを送る
   - 未実装（Phase 5）: 同意ダイアログ、設定画面の System One 項目（コマンドは `set_external_consent` / `ai_key_status` / `test_systemone` を用意済み）
+- Phase 2・5 の進捗（2026-10-03）:
+  - 仕分け画面に候補ストリップ（local は「一致度」、systemone は確率％＋「該当なし」＝Space）、ヘッダーの AI バッジ（外部送信時は橙）、未評価フォルダの再診断帯（失敗時のみ再診断ボタン）、キー割り当て一覧の強調を実装。静的モックと同じ構成であることを、Tauri をモックした確認ページ（Chromium のスクリーンショット）で確認した。**実際の Tauri アプリ（`npm run tauri dev`）での目視確認は未実施**
+  - 設定画面に「AI 候補」を追加。System One を選ぶと同意ダイアログを出し、同意は下書きに入れて「保存」で永続化
+  - `tauri-plugin-prevent-default` を導入（Tab / Shift+Tab は設定画面の操作のため無効化しない）。**Windows 側（`platform-windows` の設定）は未ビルド・未確認**
+  - 未実装: 設定画面の的中率・診断履歴の表示、local バックエンド（Phase 4）、CI への反映と説明ページ（Phase 6）
+- Phase 4（local）で決まったこと: ONNX Runtime とモデルは**初回に自動ダウンロード**（開発者の選択）。第一候補は日本語対応モデル（rinna/japanese-clip-vit-b-16 など。ONNX 化の方法と配布元は未調査）。取得元・ライセンス・ハッシュ検証・失敗時の扱いを決めてから実装する
