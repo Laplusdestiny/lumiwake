@@ -53,3 +53,39 @@ export function candidateLevels(v: Suggestions | null): Map<number, SuggestionLe
   if (v?.state === "ready") for (const c of v.cards) m.set(c.target, c.level);
   return m;
 }
+
+/** しきい値の入力値を 0〜1 に収める。数値でなければ元の値のまま */
+export function parseUnit(value: string, fallback: number): number {
+  if (value.trim() === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+}
+
+/** 整数の入力値を範囲に収める。数値でなければ元の値のまま */
+export function parseIntIn(value: string, min: number, max: number, fallback: number): number {
+  if (value.trim() === "") return fallback;
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+/** 送信先のホスト名（同意の確認文に出す）。解釈できなければ入力そのまま */
+export function endpointHost(endpoint: string): string {
+  try {
+    return new URL(endpoint).hostname || endpoint;
+  } catch {
+    return endpoint;
+  }
+}
+
+/** 画像を外部へ送ることへの同意の確認文 */
+export function consentMessage(endpoint: string): string {
+  return [
+    `System One を使うと、表示中の画像と、先読みする数枚先の画像を、縮小・再圧縮して ${endpointHost(endpoint)} へ送信します。`,
+    "・元のファイルや撮影情報（EXIF）は送りません。",
+    "・振り分け先のフォルダ名と説明文は、選択肢として一緒に送ります（パスは送りません）。",
+    "・送りたくないフォルダは、振り分け先ごとの設定で「外部に送らない」にできます。",
+    "・同意は、設定でいつでも取り消せます。",
+    "",
+    "画像を外部へ送信することに同意しますか？",
+  ].join("\n");
+}
