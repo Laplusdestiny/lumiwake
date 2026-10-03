@@ -92,6 +92,8 @@ pub struct ActionKeys {
     pub toggle_view: String,
     /// 振り分け先リストのパス表示の切り替え
     pub toggle_paths: String,
+    /// 表示中の 1 枚だけ AI 候補を診断し直す
+    pub rediagnose: String,
 }
 
 impl Default for ActionKeys {
@@ -104,13 +106,14 @@ impl Default for ActionKeys {
             next: "Right".into(),
             // 単独キーは振り分けに使えるよう空けておき、表示の切り替えは組み合わせキーにする
             toggle_view: "Ctrl+Shift+F".into(),
-            toggle_paths: "Ctrl+Shift+P".into(),
+            toggle_paths: "Ctrl+Shift+O".into(),
+            rediagnose: "Ctrl+Shift+D".into(),
         }
     }
 }
 
 impl ActionKeys {
-    fn entries(&self) -> [(&'static str, &str); 7] {
+    fn entries(&self) -> [(&'static str, &str); 8] {
         [
             ("スキップ", &self.skip),
             ("削除", &self.delete),
@@ -119,10 +122,11 @@ impl ActionKeys {
             ("次の画像", &self.next),
             ("表示モード切り替え", &self.toggle_view),
             ("パス表示の切り替え", &self.toggle_paths),
+            ("再診断", &self.rediagnose),
         ]
     }
 
-    fn entries_mut(&mut self) -> [&mut String; 7] {
+    fn entries_mut(&mut self) -> [&mut String; 8] {
         [
             &mut self.skip,
             &mut self.delete,
@@ -131,6 +135,7 @@ impl ActionKeys {
             &mut self.next,
             &mut self.toggle_view,
             &mut self.toggle_paths,
+            &mut self.rediagnose,
         ]
     }
 }
@@ -168,7 +173,7 @@ impl Target {
 }
 
 /// 設定ファイルの形式のバージョン。既定値を変えたときの移行に使う
-pub const CONFIG_VERSION: u32 = 1;
+pub const CONFIG_VERSION: u32 = 2;
 
 fn legacy_version() -> u32 {
     0
@@ -371,6 +376,13 @@ impl Config {
                 self.keys.toggle_view = ActionKeys::default().toggle_view;
             }
         }
+        if self.version < 2 {
+            // v1 の既定だった Ctrl+Shift+P は WebView2 の印刷と衝突しうるため、既定の Ctrl+Shift+O へ移す。
+            // 自分で別のキーに変えていた場合はそのまま
+            if self.keys.toggle_paths == "Ctrl+Shift+P" {
+                self.keys.toggle_paths = ActionKeys::default().toggle_paths;
+            }
+        }
         self.version = CONFIG_VERSION;
     }
 }
@@ -478,7 +490,7 @@ mod tests {
         let c = parse("[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
         assert_eq!(c.version, CONFIG_VERSION);
         assert_eq!(c.keys.toggle_view, "Ctrl+Shift+F");
-        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+P", "新しい項目は既定値");
+        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+O", "新しい項目は既定値");
         assert!(c.general.show_paths);
 
         // 自分で変えていたキーはそのまま
@@ -486,8 +498,31 @@ mod tests {
         assert_eq!(c.keys.toggle_view, "Alt+V");
 
         // 最新の形式で F を選んでいる場合は変えない
-        let c = parse("version = 1\n[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
+        let c = parse("version = 2\n[keys]\ntoggle_view = \"F\"\n", Path::new("x")).unwrap();
         assert_eq!(c.keys.toggle_view, "F");
+    }
+
+    #[test]
+    fn v1_default_path_toggle_key_moves_off_the_webview_print_key() {
+        let c = parse("version = 1\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.version, CONFIG_VERSION);
+        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+O");
+
+        // 自分で変えていたキーはそのまま
+        let c = parse("version = 1\n[keys]\ntoggle_paths = \"Alt+P\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.toggle_paths, "Alt+P");
+
+        // 最新の形式で P を選んだ場合は尊重する（警告は出る）
+        let c = parse("version = 2\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+P");
+        assert!(c
+            .validate()
+            .iter()
+            .any(|i| i.severity == Severity::Warning && i.key.as_deref() == Some("Ctrl+Shift+P")));
+        assert!(Config::default()
+            .validate()
+            .iter()
+            .all(|i| i.severity != Severity::Warning || !i.message.contains("予約")));
     }
 
     #[test]
@@ -526,6 +561,17 @@ mod tests {
         let mut bad = Config::default();
         bad.ai.local.low = 0.9;
         assert!(Config::has_errors(&bad.validate()), "しきい値の逆転は保存できない");
+    }
+
+    #[test]
+    fn rediagnose_key_defaults_and_conflicts_are_detected() {
+        assert_eq!(Config::default().keys.rediagnose, "Ctrl+Shift+D");
+        let c = parse("[keys]\nrediagnose = \"shift+ctrl+d\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.rediagnose, "Ctrl+Shift+D");
+        // 振り分けキーと重複したら保存できない
+        let mut c = Config::default();
+        c.targets.push(target("Ctrl+Shift+D", "かぶり", Path::new("/photos")));
+        assert!(c.validate().iter().any(|i| i.severity == Severity::Error && i.key.as_deref() == Some("Ctrl+Shift+D")));
     }
 
     #[test]
