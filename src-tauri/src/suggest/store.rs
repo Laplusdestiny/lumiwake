@@ -50,6 +50,15 @@ CREATE TABLE IF NOT EXISTS diagnoses (
   is_latest     INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_diag_hash ON diagnoses(image_hash, backend, is_latest);
+
+-- ユーザーが最終的に振り分けた先（knn の手本・的中率表示に使う）。Undo されたら取り消す
+CREATE TABLE IF NOT EXISTS outcomes (
+  image_hash   TEXT NOT NULL,
+  destination  TEXT NOT NULL,
+  decided_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_outcomes_dest ON outcomes(destination);
+CREATE INDEX IF NOT EXISTS idx_outcomes_hash ON outcomes(image_hash, destination);
 ";
 
 impl Store {
@@ -118,6 +127,47 @@ impl Store {
         )?;
         let rows = stmt.query_map(params![image_hash], row_to_raw)?.collect::<std::result::Result<Vec<_>, _>>()?;
         rows.into_iter().map(raw_to_diagnosis).collect()
+    }
+
+    /// 画像を振り分けた先を記録する。削除・スキップは振り分けではないので記録しない
+    pub fn record_outcome(&self, image_hash: &str, destination: &str, at: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO outcomes (image_hash, destination, decided_at) VALUES (?1, ?2, ?3)",
+            params![image_hash, destination, at],
+        )?;
+        Ok(())
+    }
+
+    /// Undo で振り分けを取り消したとき、その画像・振り分け先の最新の記録を 1 件消す。消したら true
+    pub fn undo_outcome(&self, image_hash: &str, destination: &str) -> Result<bool> {
+        let n = self.conn.execute(
+            "DELETE FROM outcomes WHERE rowid = (
+               SELECT MAX(rowid) FROM outcomes WHERE image_hash = ?1 AND destination = ?2)",
+            params![image_hash, destination],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// 振り分け先へ実際に振り分けられた画像のハッシュ（重複なし、記録の古い順）
+    pub fn outcome_hashes(&self, destination: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT image_hash FROM outcomes WHERE destination = ?1 GROUP BY image_hash ORDER BY MIN(rowid)",
+        )?;
+        let rows =
+            stmt.query_map(params![destination], |r| r.get(0))?.collect::<std::result::Result<Vec<String>, _>>()?;
+        Ok(rows)
+    }
+
+    /// 画像が最終的に振り分けられた先（複数あれば最新）
+    pub fn outcome_of(&self, image_hash: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT destination FROM outcomes WHERE image_hash = ?1 ORDER BY rowid DESC LIMIT 1",
+                params![image_hash],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 }
 
@@ -203,6 +253,48 @@ mod tests {
         s.record_diagnosis("h", "systemone", "m", &ids(&["a"]), &suggestion(&[("a", 0.9)]), "t2").unwrap();
         assert!(s.latest_diagnosis("h", "local").unwrap().is_some(), "別バックエンドの診断で外れない");
         assert!(s.latest_diagnosis("h", "systemone").unwrap().is_some());
+    }
+
+    #[test]
+    fn outcomes_are_recorded_and_listed_per_destination() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.outcome_of("h1").unwrap(), None);
+        s.record_outcome("h1", "/p/a", "t1").unwrap();
+        s.record_outcome("h2", "/p/a", "t2").unwrap();
+        s.record_outcome("h3", "/p/b", "t3").unwrap();
+        assert_eq!(s.outcome_hashes("/p/a").unwrap(), ["h1", "h2"]);
+        assert_eq!(s.outcome_hashes("/p/b").unwrap(), ["h3"]);
+        assert!(s.outcome_hashes("/p/none").unwrap().is_empty());
+        assert_eq!(s.outcome_of("h1").unwrap().as_deref(), Some("/p/a"));
+    }
+
+    #[test]
+    fn undo_removes_only_the_matching_latest_outcome() {
+        let s = Store::open_in_memory().unwrap();
+        s.record_outcome("h1", "/p/a", "t1").unwrap();
+        s.record_outcome("h2", "/p/a", "t2").unwrap();
+        assert!(s.undo_outcome("h1", "/p/a").unwrap());
+        assert_eq!(s.outcome_hashes("/p/a").unwrap(), ["h2"], "他の画像の記録は残る");
+        assert!(!s.undo_outcome("h1", "/p/a").unwrap(), "もう無ければ false");
+        assert!(!s.undo_outcome("h2", "/p/other").unwrap(), "振り分け先が違えば消さない");
+        assert_eq!(s.outcome_hashes("/p/a").unwrap(), ["h2"]);
+    }
+
+    #[test]
+    fn moving_the_same_image_twice_then_undoing_once_keeps_one_record() {
+        let s = Store::open_in_memory().unwrap();
+        // 同じ内容の画像を a へ → 取り消し → もう一度 a へ、のあとに 1 回取り消す
+        s.record_outcome("h", "/p/a", "t1").unwrap();
+        assert!(s.undo_outcome("h", "/p/a").unwrap());
+        s.record_outcome("h", "/p/a", "t2").unwrap();
+        assert_eq!(s.outcome_hashes("/p/a").unwrap(), ["h"]);
+        assert!(s.undo_outcome("h", "/p/a").unwrap());
+        assert!(s.outcome_hashes("/p/a").unwrap().is_empty());
+        // 同じ内容のファイルが 2 つあるとき、振り分け 2 回 → 取り消し 1 回で 1 件残る
+        s.record_outcome("dup", "/p/a", "t3").unwrap();
+        s.record_outcome("dup", "/p/a", "t4").unwrap();
+        assert!(s.undo_outcome("dup", "/p/a").unwrap());
+        assert_eq!(s.outcome_hashes("/p/a").unwrap(), ["dup"]);
     }
 
     #[test]
