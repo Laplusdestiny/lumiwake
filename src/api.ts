@@ -38,6 +38,7 @@ export interface Config {
     next: string;
     toggle_view: string;
     toggle_paths: string;
+    rediagnose: string;
   };
   targets: Target[];
   /** AI 振り分け候補。設定画面が対応するまでは、読んだ値をそのまま保存し直す */

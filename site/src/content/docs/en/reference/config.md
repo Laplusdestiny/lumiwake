@@ -33,7 +33,8 @@ undo = "Ctrl+Z"
 prev = "Left"
 next = "Right"
 toggle_view = "Ctrl+Shift+F"               # sidebar / full-screen
-toggle_paths = "Ctrl+Shift+P"              # show / hide folder paths
+toggle_paths = "Ctrl+Shift+O"              # show / hide folder paths
+rediagnose = "Ctrl+Shift+D"                # re-run AI suggestions for the current image
 
 [[targets]]
 key = "1"

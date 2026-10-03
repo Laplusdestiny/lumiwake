@@ -33,7 +33,8 @@ undo = "Ctrl+Z"
 prev = "Left"
 next = "Right"
 toggle_view = "Ctrl+Shift+F"             # サイドバー型 ⇔ 全画面型
-toggle_paths = "Ctrl+Shift+P"            # パス表示の切り替え
+toggle_paths = "Ctrl+Shift+O"            # パス表示の切り替え
+rediagnose = "Ctrl+Shift+D"              # AI 候補の再診断（表示中の 1 枚）
 
 [[targets]]
 key = "1"

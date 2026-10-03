@@ -23,6 +23,7 @@ const ACTIONS: { name: keyof Config["keys"]; label: string }[] = [
   { name: "next", label: "次の画像" },
   { name: "toggle_view", label: "表示モードの切り替え" },
   { name: "toggle_paths", label: "フォルダのパス表示の切り替え" },
+  { name: "rediagnose", label: "AI 候補の再診断（表示中の 1 枚）" },
 ];
 
 export function openSettings(sec?: Section): void {
