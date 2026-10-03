@@ -4,6 +4,7 @@
 //! AI は候補を示すだけで、ファイルを動かすのは常にユーザーのキー操作（ファイル操作モジュール）。
 
 pub mod dummy;
+pub mod hash;
 
 use crate::config::ai::AiBackend;
 use image::DynamicImage;

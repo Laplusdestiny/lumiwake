@@ -29,6 +29,8 @@ toml = "1"
 # 標準で使う形式だけを有効にし、配布サイズを抑える（AVIF は下の feature で追加）
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 kamadak-exif = "0.6"
+# AI 診断キャッシュのキー（画像ファイルの中身のハッシュ）
+blake3 = "1"
 libheif-rs = { version = "2", optional = true, default-features = false, features = ["v1_17"] }
 
 [features]
