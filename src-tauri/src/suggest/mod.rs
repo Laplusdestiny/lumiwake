@@ -3,6 +3,8 @@
 //! どのバックエンドも出力は「振り分け先ごとのスコア」に統一し、画面側はバックエンドを意識しない。
 //! AI は候補を示すだけで、ファイルを動かすのは常にユーザーのキー操作（ファイル操作モジュール）。
 
+pub mod dummy;
+
 use crate::config::ai::AiBackend;
 use image::DynamicImage;
 use serde::{Deserialize, Serialize};
