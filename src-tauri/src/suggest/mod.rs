@@ -6,6 +6,7 @@
 pub mod choices;
 pub mod dummy;
 pub mod hash;
+pub mod service;
 pub mod store;
 pub mod time;
 
@@ -69,6 +70,10 @@ pub trait Suggester: Send + Sync {
     /// キャッシュの記録に使うモデル名
     fn model(&self) -> String;
     fn suggest(&self, req: &SuggestRequest) -> Result<Suggestion, SuggestError>;
+    /// 振り分け先が増えたとき、外部リクエストなしでその場で採点し直せるか（local は埋め込みのキャッシュで可能）
+    fn rescoreable(&self) -> bool {
+        false
+    }
 }
 
 /// 候補カードでの扱い。高：強調表示、中：通常表示、低：表示しない

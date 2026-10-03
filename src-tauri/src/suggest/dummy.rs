@@ -50,6 +50,10 @@ impl Suggester for DummySuggester {
         "dummy".into()
     }
 
+    fn rescoreable(&self) -> bool {
+        self.kind == ScoreKind::Match
+    }
+
     fn suggest(&self, req: &SuggestRequest) -> Result<Suggestion, SuggestError> {
         let weights: Vec<f32> = req.choices.iter().map(|c| Self::weight(req.image_hash, &c.id)).collect();
         let (scores, none_of_above) = match self.kind {
