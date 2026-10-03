@@ -93,6 +93,17 @@ pub enum Outcome {
     Conflict(ConflictInfo),
 }
 
+/// 振り分けの確定・取り消しの通知。AI 候補の「ユーザーが最終的に振り分けた先」の記録に使う。
+/// 呼び出し側が [`Session::take_events`] で受け取る。振り分け（`Moved`）だけが対象で、
+/// スキップ・削除（削除フォルダへの移動や「既存を残す」で不要になった画像）は含まない。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SortEvent {
+    /// 画像が振り分け先 `dir` に置かれた。`file` はその時点のファイルの場所
+    Placed { item: usize, dir: PathBuf, file: PathBuf },
+    /// 振り分けを取り消した。`file` は元の場所（戻したファイル）
+    PlacementUndone { item: usize, dir: PathBuf, file: PathBuf },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingDeletion {
@@ -183,12 +194,28 @@ pub struct Session {
     history: Vec<Entry>,
     /// 終了時の処理で完全削除したファイル
     finalized: HashSet<PathBuf>,
+    /// まだ呼び出し側に渡していない振り分けの通知
+    events: Vec<SortEvent>,
 }
 
 impl Session {
     pub fn new(fs: Arc<dyn Fs>, images: Vec<PathBuf>, trash_dir: Option<PathBuf>) -> Self {
         let items = images.into_iter().map(|path| Item { path, status: Status::Pending }).collect();
-        Session { fs, items, cursor: 0, trash_dir, conflict: None, history: Vec::new(), finalized: HashSet::new() }
+        Session {
+            fs,
+            items,
+            cursor: 0,
+            trash_dir,
+            conflict: None,
+            history: Vec::new(),
+            finalized: HashSet::new(),
+            events: Vec::new(),
+        }
+    }
+
+    /// 溜まった振り分けの通知を取り出す（古い順）
+    pub fn take_events(&mut self) -> Vec<SortEvent> {
+        std::mem::take(&mut self.events)
     }
 
     pub fn set_trash_dir(&mut self, dir: Option<PathBuf>) {
@@ -309,7 +336,14 @@ impl Session {
         }
 
         self.history.pop();
-        self.items[entry.item].status = entry.prev_status;
+        let undone = std::mem::replace(&mut self.items[entry.item].status, entry.prev_status);
+        if let Status::Moved { to } = undone {
+            self.events.push(SortEvent::PlacementUndone {
+                item: entry.item,
+                dir: to.parent().map(Path::to_path_buf).unwrap_or_default(),
+                file: original.clone(),
+            });
+        }
         self.cursor = entry.item;
         Ok(format!("取り消しました: {}（{}）", file_name(&original), entry.label))
     }
@@ -480,6 +514,13 @@ impl Session {
             Status::Trashed { .. } | Status::Marked { .. } => HistoryKind::Delete,
             _ => HistoryKind::Move,
         };
+        if let Status::Moved { to } = &status {
+            self.events.push(SortEvent::Placed {
+                item: idx,
+                dir: to.parent().map(Path::to_path_buf).unwrap_or_default(),
+                file: to.clone(),
+            });
+        }
         let prev_status = std::mem::replace(&mut self.items[idx].status, status);
         self.history.push(Entry { item: idx, prev_status, label, kind, moved_to, displaced });
     }
@@ -562,6 +603,115 @@ mod tests {
         assert!(!imgs[0].exists());
         assert_eq!(s.items()[0].status, Status::Moved { to: e.a.join("img1.jpg") });
         assert_eq!(s.current(), Some(1));
+    }
+
+    fn dirs(events: &[SortEvent]) -> Vec<(&'static str, usize, PathBuf)> {
+        events
+            .iter()
+            .map(|e| match e {
+                SortEvent::Placed { item, dir, .. } => ("placed", *item, dir.clone()),
+                SortEvent::PlacementUndone { item, dir, .. } => ("undone", *item, dir.clone()),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_move_emits_placed_with_the_new_file_location_and_events_are_drained() {
+        let (e, imgs) = env(2);
+        let mut s = session(imgs, None);
+        assert!(s.take_events().is_empty());
+        s.apply(move_to(&e.a)).unwrap();
+        assert_eq!(s.take_events(), vec![SortEvent::Placed { item: 0, dir: e.a.clone(), file: e.a.join("img1.jpg") }]);
+        assert!(s.take_events().is_empty(), "取り出したら空になる");
+    }
+
+    #[test]
+    fn undoing_a_move_emits_placement_undone_with_the_restored_file() {
+        let (e, imgs) = env(2);
+        let mut s = session(imgs.clone(), None);
+        s.apply(move_to(&e.a)).unwrap();
+        s.take_events();
+        s.undo().unwrap();
+        assert_eq!(
+            s.take_events(),
+            vec![SortEvent::PlacementUndone { item: 0, dir: e.a.clone(), file: imgs[0].clone() }]
+        );
+        assert!(imgs[0].exists(), "通知の時点でファイルは元の場所にある");
+    }
+
+    #[test]
+    fn skip_delete_and_their_undo_emit_nothing() {
+        let (e, imgs) = env(3);
+        let mut s = session(imgs, Some(&e.trash));
+        s.apply(Action::Skip).unwrap();
+        s.apply(Action::Delete).unwrap();
+        s.undo().unwrap();
+        s.undo().unwrap();
+        assert!(s.take_events().is_empty(), "削除・スキップは振り分けではない");
+        let mut s = session(vec![e.src.join("img1.jpg")], None);
+        s.apply(Action::Delete).unwrap();
+        s.undo().unwrap();
+        assert!(s.take_events().is_empty(), "削除予定の記録だけでも同じ");
+    }
+
+    #[test]
+    fn conflict_choices_emit_placed_only_when_the_image_is_placed() {
+        for (choice, placed) in [
+            (ConflictChoice::KeepBoth, true),
+            (ConflictChoice::Overwrite, true),
+            (ConflictChoice::KeepExisting, false),
+            (ConflictChoice::Skip, false),
+        ] {
+            let (e, imgs) = env(1);
+            fs::write(e.a.join("img1.jpg"), "existing").unwrap();
+            let mut s = session(imgs, None);
+            assert!(matches!(s.apply(move_to(&e.a)).unwrap(), Outcome::Conflict(_)));
+            assert!(s.take_events().is_empty(), "衝突の確認中はまだ何も確定していない");
+            s.resolve_conflict(choice).unwrap();
+            let ev = s.take_events();
+            assert_eq!(ev.len(), usize::from(placed), "{choice:?}: {ev:?}");
+            if placed {
+                assert_eq!(dirs(&ev), vec![("placed", 0, e.a.clone())]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_move_emits_nothing() {
+        let (e, imgs) = env(1);
+        let mut s = session(imgs, None);
+        let missing = e.src.join("no-such-dir");
+        assert!(s.apply(Action::MoveTo { dir: missing, label: "x".into() }).is_err());
+        assert!(s.take_events().is_empty());
+    }
+
+    #[test]
+    fn placement_events_pair_up_across_multiple_undo_levels() {
+        let (e, imgs) = env(3);
+        let mut s = session(imgs, None);
+        s.apply(move_to(&e.a)).unwrap();
+        s.apply(Action::Skip).unwrap();
+        s.apply(move_to(&e.b)).unwrap();
+        s.undo().unwrap();
+        s.undo().unwrap();
+        s.undo().unwrap();
+        assert_eq!(
+            dirs(&s.take_events()),
+            vec![
+                ("placed", 0, e.a.clone()),
+                ("placed", 2, e.b.clone()),
+                ("undone", 2, e.b.clone()),
+                ("undone", 0, e.a.clone()),
+            ]
+        );
+    }
+
+    #[test]
+    fn moving_within_the_source_folder_still_counts_as_placed() {
+        let (e, imgs) = env(1);
+        let mut s = session(imgs, None);
+        s.apply(move_to(&e.src)).unwrap();
+        assert_eq!(dirs(&s.take_events()), vec![("placed", 0, e.src.clone())]);
     }
 
     #[test]
