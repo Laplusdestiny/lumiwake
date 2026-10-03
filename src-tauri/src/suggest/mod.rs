@@ -8,6 +8,7 @@ pub mod dummy;
 pub mod factory;
 pub mod hash;
 pub mod outcomes;
+pub mod prefetch;
 pub mod service;
 pub mod store;
 pub mod time;
