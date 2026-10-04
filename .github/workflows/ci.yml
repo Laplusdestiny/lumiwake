@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    # ci/codecov は Codecov 連携の動作確認用（確認後に外す）
-    branches: [main, ci/codecov]
+    # main のカバレッジを Codecov の比較基準にする
+    branches: [main]
   pull_request:
 
 concurrency:
