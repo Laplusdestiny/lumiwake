@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # ci/codecov は Codecov 連携の動作確認用（確認後に外す）
+    branches: [main, ci/codecov]
   pull_request:
 
 concurrency:
@@ -21,8 +22,27 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
+      - name: カバレッジを Codecov へ送信
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/lcov.info
+          disable_search: true
+          flags: frontend
+          name: frontend
+      - name: テスト結果を Codecov へ送信
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: test-results/frontend-junit.xml
+          disable_search: true
+          flags: frontend
+          name: frontend
 
   rust:
     name: Rust (${{ matrix.name }})
@@ -50,7 +70,12 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libheif-dev libheif-plugin-libde265 libdav1d-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
+      - name: カバレッジ計測ツール
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -62,4 +87,29 @@ jobs:
         run: mkdir -p dist && touch dist/index.html
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --features "${{ matrix.features }}" -- -D warnings
-      - run: cargo test --features "${{ matrix.features }}"
+      - name: テスト
+        if: runner.os != 'Linux'
+        run: cargo test --features "${{ matrix.features }}"
+      # Linux ではカバレッジを取りながらテストし、結果を Codecov に送る
+      - name: テスト（カバレッジ計測）
+        if: runner.os == 'Linux'
+        run: cargo llvm-cov nextest --features "${{ matrix.features }}" --profile ci --lcov --output-path lcov.info
+      - name: カバレッジを Codecov へ送信
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: src-tauri/lcov.info
+          disable_search: true
+          flags: rust
+          name: rust-linux
+      - name: テスト結果を Codecov へ送信
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: src-tauri/target/nextest/ci/junit.xml
+          disable_search: true
+          flags: rust
+          name: rust-linux

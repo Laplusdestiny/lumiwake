@@ -33,3 +33,8 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---- テスト・カバレッジ ----
+coverage/
+test-results/
+lcov.info
