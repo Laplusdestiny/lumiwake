@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>案C 一括確認画面</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#6cb2ff}a:hover{color:#a6d0ff}
+.kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border:1px solid #3a404b;border-bottom-width:2px;border-radius:5px;background:#262a32;color:#e6e8eb;font-family:'JetBrains Mono',monospace;font-size:12px}
+.path{font-family:'JetBrains Mono',monospace;font-size:11px;color:#9aa1ad;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style>
+</head>
+<body>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; display: flex; flex-direction: column; background: #121418; color: #e6e8eb; font-family: 'IBM Plex Sans JP', 'Noto Sans JP', sans-serif; font-size: 14px">
+
+  <header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid #2c313a; background: #1a1d23">
+    <div style="font-weight: 700; font-size: 16px">一括確認</div>
+    <div style="color: #9aa1ad; font-size: 13px">412 枚中 380 枚診断済み · AI：ローカル CLIP</div>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: #121418">
+      <button style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #2c313a; color: #e6e8eb; font: inherit; font-size: 13px">高（自動選択）214</button>
+      <button style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #c9cdd4; font: inherit; font-size: 13px">中（要確認）121</button>
+      <button style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #c9cdd4; font: inherit; font-size: 13px">候補なし 45</button>
+      <button style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #c9cdd4; font: inherit; font-size: 13px">未診断 32</button>
+    </div>
+  </header>
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 20px; display: flex; flex-direction: column; gap: 22px">
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; gap: 10px">
+        <input id="g1" type="checkbox" checked style="width: 18px; height: 18px; accent-color: #6cb2ff">
+        <label for="g1" style="font-weight: 600; font-size: 15px">猫</label>
+        <span class="path">D:\Photos\仕分け\猫</span>
+        <span class="kbd">1</span>
+        <div style="flex-grow: 1"></div>
+        <span style="font-size: 12px; color: #9aa1ad">98 枚 · 全選択</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px">
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2041.jpg</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.86</span>
+            </div>
+          </div>
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2044.jpg</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.91</span>
+            </div>
+          </div>
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2050.jpg</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.83</span>
+            </div>
+          </div>
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2051.jpg</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.88</span>
+            </div>
+          </div>
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2063.heic</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.82</span>
+            </div>
+          </div>
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2070.jpg</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.94</span>
+            </div>
+          </div>
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2071.jpg</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.81</span>
+            </div>
+          </div>
+        
+          <div style="position: relative; border-radius: 6px; overflow: hidden; outline: 2px solid #6cb2ff">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; border-radius: 4px; background: #6cb2ff; display: flex; align-items: center; justify-content: center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d1b2a" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 5px 7px; background: #1a1d23; font-size: 11px">
+              <span class="path">IMG_2088.webp</span><span style="font-family: 'JetBrains Mono', monospace; color: #6cb2ff">0.85</span>
+            </div>
+          </div>
+        
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; gap: 10px">
+        <input id="g2" type="checkbox" style="width: 18px; height: 18px; accent-color: #6cb2ff">
+        <label for="g2" style="font-weight: 600; font-size: 15px">料理</label>
+        <span class="path">D:\Photos\仕分け\料理</span>
+        <span class="kbd">4</span>
+        <span style="padding: 2px 8px; border-radius: 4px; border: 1px solid #5a4a2e; color: #f0c27a; font-size: 11px">中：要確認</span>
+        <div style="flex-grow: 1"></div>
+        <span style="font-size: 12px; color: #9aa1ad">37 枚 · 0 枚選択</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px">
+        
+          <div style="border-radius: 6px; overflow: hidden; outline: 1px solid #2c313a">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="padding: 5px 7px; background: #1a1d23; font-size: 11px; display: flex; flex-direction: column; gap: 2px">
+              <div style="display: flex; justify-content: space-between"><span>料理</span><span style="font-family: 'JetBrains Mono', monospace; color: #c9cdd4">0.63</span></div>
+              <div style="display: flex; justify-content: space-between; color: #9aa1ad"><span>カフェ</span><span style="font-family: 'JetBrains Mono', monospace">0.55</span></div>
+            </div>
+          </div>
+        
+          <div style="border-radius: 6px; overflow: hidden; outline: 1px solid #2c313a">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="padding: 5px 7px; background: #1a1d23; font-size: 11px; display: flex; flex-direction: column; gap: 2px">
+              <div style="display: flex; justify-content: space-between"><span>料理</span><span style="font-family: 'JetBrains Mono', monospace; color: #c9cdd4">0.58</span></div>
+              <div style="display: flex; justify-content: space-between; color: #9aa1ad"><span>風景</span><span style="font-family: 'JetBrains Mono', monospace">0.44</span></div>
+            </div>
+          </div>
+        
+          <div style="border-radius: 6px; overflow: hidden; outline: 1px solid #2c313a">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="padding: 5px 7px; background: #1a1d23; font-size: 11px; display: flex; flex-direction: column; gap: 2px">
+              <div style="display: flex; justify-content: space-between"><span>料理</span><span style="font-family: 'JetBrains Mono', monospace; color: #c9cdd4">0.71</span></div>
+              <div style="display: flex; justify-content: space-between; color: #9aa1ad"><span>カフェ</span><span style="font-family: 'JetBrains Mono', monospace">0.66</span></div>
+            </div>
+          </div>
+        
+          <div style="border-radius: 6px; overflow: hidden; outline: 1px solid #2c313a">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="padding: 5px 7px; background: #1a1d23; font-size: 11px; display: flex; flex-direction: column; gap: 2px">
+              <div style="display: flex; justify-content: space-between"><span>料理</span><span style="font-family: 'JetBrains Mono', monospace; color: #c9cdd4">0.49</span></div>
+              <div style="display: flex; justify-content: space-between; color: #9aa1ad"><span>スクショ</span><span style="font-family: 'JetBrains Mono', monospace">0.42</span></div>
+            </div>
+          </div>
+        
+          <div style="border-radius: 6px; overflow: hidden; outline: 1px solid #2c313a">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="padding: 5px 7px; background: #1a1d23; font-size: 11px; display: flex; flex-direction: column; gap: 2px">
+              <div style="display: flex; justify-content: space-between"><span>料理</span><span style="font-family: 'JetBrains Mono', monospace; color: #c9cdd4">0.66</span></div>
+              <div style="display: flex; justify-content: space-between; color: #9aa1ad"><span>カフェ</span><span style="font-family: 'JetBrains Mono', monospace">0.47</span></div>
+            </div>
+          </div>
+        
+          <div style="border-radius: 6px; overflow: hidden; outline: 1px solid #2c313a">
+            <div style="aspect-ratio: 4 / 3; background: repeating-linear-gradient(135deg, #1d2027 0 10px, #22262e 10px 20px)"></div>
+            <div style="padding: 5px 7px; background: #1a1d23; font-size: 11px; display: flex; flex-direction: column; gap: 2px">
+              <div style="display: flex; justify-content: space-between"><span>料理</span><span style="font-family: 'JetBrains Mono', monospace; color: #c9cdd4">0.52</span></div>
+              <div style="display: flex; justify-content: space-between; color: #9aa1ad"><span>あとで見る</span><span style="font-family: 'JetBrains Mono', monospace">0.41</span></div>
+            </div>
+          </div>
+        
+      </div>
+    </section>
+  </div>
+
+  <footer style="height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-top: 1px solid #2c313a; background: #1a1d23">
+    <div style="font-size: 13px; color: #c9cdd4">選択中 <span style="font-weight: 700; color: #e6e8eb">214</span> 枚 → 各第1候補へ移動</div>
+    <div style="font-size: 12px; color: #9aa1ad">クリックで選択切替 · 右クリックで振り分け先を変更</div>
+    <div style="flex-grow: 1"></div>
+    <button style="height: 40px; padding: 0 16px; border: 1px solid #3a404b; border-radius: 6px; background: transparent; color: #e6e8eb; font: inherit">1 枚ずつ確認に戻る</button>
+    <button style="height: 40px; padding: 0 18px; border: 0; border-radius: 6px; background: #6cb2ff; color: #0d1b2a; font: inherit; font-weight: 700">214 枚を移動 <span style="font-weight: 400; font-size: 12px">Ctrl+Enter</span></button>
+  </footer>
+</div>
+</body>
+</html>

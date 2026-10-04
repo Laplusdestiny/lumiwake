@@ -9,6 +9,10 @@ export interface Target {
   key: string;
   name: string;
   path: string;
+  /** AI 候補用の説明文 */
+  description?: string;
+  /** true なら外部 API への選択肢に含めない */
+  exclude_external?: boolean;
 }
 
 /** TOML の設定そのもの（キー名は TOML と同じ snake_case） */
@@ -34,9 +38,60 @@ export interface Config {
     next: string;
     toggle_view: string;
     toggle_paths: string;
+    rediagnose: string;
   };
   targets: Target[];
+  /** AI 振り分け候補。設定画面が対応するまでは、読んだ値をそのまま保存し直す */
+  ai: Ai;
 }
+
+export type AiBackend = "local" | "systemone" | "off";
+
+export interface Ai {
+  backend: AiBackend;
+  top_k: number;
+  prefetch: number;
+  local: { model: string; strategy: "zeroshot" | "knn" | "hybrid"; high: number; low: number };
+  systemone: {
+    endpoint: string;
+    /** 空ならエンドポイントの末尾から判別 */
+    model: string;
+    api_key_env: string;
+    max_image_kb: number;
+    high: number;
+    low: number;
+    external_consent: boolean;
+  };
+}
+
+export type SuggestionLevel = "high" | "mid" | "low";
+
+/** 候補カード 1 枚。`target` は設定の targets の番号（キーでの振り分けはこの番号を使う） */
+export interface SuggestionCard {
+  target: number;
+  key: string;
+  name: string;
+  path: string;
+  score: number;
+  level: SuggestionLevel;
+}
+
+/**
+ * 1 枚の画像の AI 候補。`state` が "ready" のときだけ cards などが意味を持つ。
+ * kind が "match" のスコアは確率ではなく「一致度」と表記する。
+ */
+export type Suggestions = {
+  backend: AiBackend;
+  kind: "probability" | "match" | null;
+  /** 画像を外部へ送っているか（「外部送信中」表示） */
+  sendsImages: boolean;
+  cards: SuggestionCard[];
+  /** 「該当なし」の確率（Space＝スキップに対応）。確率を返すバックエンドのみ */
+  noneOfAbove: number | null;
+  /** 診断のあとに追加された、未評価の振り分け先の名前 */
+  unevaluated: string[];
+  fromCache: boolean;
+} & ({ state: "ready" | "off" } | { state: "unavailable" | "failed"; message: string });
 
 export interface Issue {
   severity: "error" | "warning";
@@ -155,6 +210,15 @@ export const api = {
   navigate: (forward: boolean) => invoke<SessionView>("navigate", { forward }),
   jumpTo: (index: number) => invoke<SessionView>("jump_to", { index }),
   imageInfo: (generation: number, index: number) => invoke<ImageInfo>("image_info", { generation, index }),
+  /** 画像の AI 候補。force=true で診断し直す（キャッシュにあればリクエストは出ない） */
+  getSuggestions: (generation: number, index: number, force = false) =>
+    invoke<Suggestions>("get_suggestions", { generation, index, force }),
+  /** System One の API キーが環境変数にあるか（キーの値は返らない） */
+  aiKeyStatus: () => invoke<{ envName: string; detected: boolean }>("ai_key_status"),
+  /** System One への接続テスト。合成した小さな画像を 1 回だけ送り、成功したらモデル名を返す */
+  testSystemone: () => invoke<string>("test_systemone"),
+  /** 画像を外部へ送ることへの同意を保存する（false で取り消し） */
+  setExternalConsent: (consent: boolean) => invoke<ConfigPayload>("set_external_consent", { consent }),
   pendingDeletions: () => invoke<DeletionSummary>("pending_deletions"),
   finalizeAndExit: (del: boolean) => invoke<FinalizeReport>("finalize_and_exit", { delete: del }),
   exitApp: () => invoke<void>("exit_app"),

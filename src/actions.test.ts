@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   imageInfo: vi.fn(),
   startSession: vi.fn(),
   getConfig: vi.fn(),
+  getSuggestions: vi.fn(),
 }));
 const toast = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (orig) => ({ ...(await orig<typeof import("./api")>()), api }));
@@ -18,7 +19,7 @@ vi.mock("./toast", () => ({ toast }));
 
 import * as actions from "./actions";
 import { onChange, store } from "./store";
-import { makeConfig, makeSession } from "./test/fixtures";
+import { makeConfig, makeSession, makeSuggestions } from "./test/fixtures";
 
 const info = { name: "c.jpg", path: "/c.jpg", size: 1, modified: null, width: 4, height: 3, taken: null };
 
@@ -34,6 +35,7 @@ beforeEach(() => {
   store.info = null;
   store.screen = "start";
   api.imageInfo.mockResolvedValue(info);
+  api.getSuggestions.mockResolvedValue(makeSuggestions());
 });
 
 describe("enqueue", () => {

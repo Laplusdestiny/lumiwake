@@ -178,7 +178,7 @@ describe("togglePaths", () => {
   it("その場で切り替えてから設定に保存する", async () => {
     const saved = makeConfig({ show_paths: false });
     api.setShowPaths.mockResolvedValue(saved);
-    expect(key("Ctrl+Shift+P")).toBe(true);
+    expect(key("Ctrl+Shift+O")).toBe(true);
     expect(store.config!.config.general.show_paths).toBe(false);
     await vi.waitFor(() => expect(store.config).toBe(saved));
     expect(api.setShowPaths).toHaveBeenCalledWith(false);
