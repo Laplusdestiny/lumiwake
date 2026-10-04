@@ -1,0 +1,24 @@
+# https://docs.codecov.com/docs/codecov-yaml
+coverage:
+  status:
+    # 今はカバレッジを集め始めた段階なので、数値で CI を落とさない
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+flags:
+  frontend:
+    paths:
+      - src/
+    carryforward: true
+  rust:
+    paths:
+      - src-tauri/src/
+    carryforward: true
+
+comment:
+  layout: "diff, flags, files"
+  require_changes: true

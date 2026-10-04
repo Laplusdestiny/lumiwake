@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -18,5 +19,14 @@ export default defineConfig({
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
     minify: !process.env.TAURI_ENV_DEBUG ? "oxc" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+  },
+  test: {
+    // npm run test:coverage で使う。テストのないファイルも 0% として集計に含める
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.test.ts", "src/test/**", "src/vite-env.d.ts"],
+      reporter: ["text", "lcov"],
+    },
   },
 });

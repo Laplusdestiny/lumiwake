@@ -561,19 +561,23 @@ pub fn pending_deletions(state: State<'_, AppState>) -> DeletionSummary {
 /// 削除予定のファイルを完全削除する。すべて消せたらアプリを終了する
 #[tauri::command]
 pub fn finalize_and_exit(app: AppHandle, state: State<'_, AppState>, delete: bool) -> FinalizeReport {
-    let mut report = FinalizeReport::default();
-    if delete {
-        // ロックは常に session → retired の順で取る
-        let mut current = state.session();
-        let mut sessions = state.retired();
-        for s in sessions.iter_mut().chain(current.as_mut().map(|c| &mut c.session)) {
-            let r = s.finalize_deletions();
-            report.deleted.extend(r.deleted);
-            report.failed.extend(r.failed);
-        }
-    }
+    let report = if delete { finalize_all(&state) } else { FinalizeReport::default() };
     if report.failed.is_empty() {
         exit_app(app, state);
+    }
+    report
+}
+
+/// 切り替え前のセッションも含め、削除予定のファイルをすべて完全削除する
+fn finalize_all(state: &AppState) -> FinalizeReport {
+    let mut report = FinalizeReport::default();
+    // ロックは常に session → retired の順で取る
+    let mut current = state.session();
+    let mut sessions = state.retired();
+    for s in sessions.iter_mut().chain(current.as_mut().map(|c| &mut c.session)) {
+        let r = s.finalize_deletions();
+        report.deleted.extend(r.deleted);
+        report.failed.extend(r.failed);
     }
     report
 }
@@ -748,5 +752,328 @@ mod tests {
         let (_tmp, state, _src, dest) = app();
         with_session(&state, |s| s.session.apply(Action::Delete).map_err(|e| e.to_string())).unwrap();
         assert!(recorded(&state, &dest).is_empty());
+    }
+
+    use crate::config::Target;
+    use crate::decoder::tests::write_dummy;
+    use tauri::test::{mock_app, MockRuntime};
+    use tauri::{App, Manager};
+    use tempfile::TempDir;
+
+    /// 一時ディレクトリに仕分け元（ダミー画像 3 枚）と振り分け先 2 つを用意する
+    struct Fixture {
+        dir: TempDir,
+        app: App<MockRuntime>,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let src = dir.path().join("src");
+            for d in ["src", "a", "b"] {
+                std::fs::create_dir_all(dir.path().join(d)).unwrap();
+            }
+            for name in ["1.png", "2.png", "3.png"] {
+                write_dummy(&src.join(name), 8, 6);
+            }
+            std::fs::write(src.join("memo.txt"), "画像ではない").unwrap();
+            let app = mock_app();
+            app.manage(AppState::new(dir.path().join("conf").join("config.toml"), dir.path().join("data")));
+            let f = Fixture { dir, app };
+            let mut config = f.config().config;
+            config.targets = vec![f.target("1", "a"), f.target("2", "b")];
+            save_config(f.state(), config).unwrap();
+            f
+        }
+
+        fn state(&self) -> State<'_, AppState> {
+            self.app.state::<AppState>()
+        }
+
+        fn config(&self) -> ConfigPayload {
+            get_config(self.state())
+        }
+
+        /// `a/1.png` のように書いた相対パス。Windows でも区切りがそろうよう要素ごとにつなぐ
+        fn path(&self, rel: &str) -> PathBuf {
+            rel.split('/').fold(self.dir.path().to_path_buf(), |p, part| p.join(part))
+        }
+
+        fn target(&self, key: &str, rel: &str) -> Target {
+            Target {
+                key: key.into(),
+                name: String::new(),
+                path: self.path(rel),
+                description: String::new(),
+                exclude_external: false,
+            }
+        }
+
+        fn start(&self) -> SessionView {
+            start_session(self.state(), lossy(&self.path("src")), false).unwrap()
+        }
+
+        fn act(&self, action: ActionArg) -> SessionView {
+            perform(self.state(), action).unwrap().view
+        }
+
+        fn set_delete_folder(&self, rel: &str) {
+            let mut config = self.config().config;
+            config.general.delete_folder = Some(self.path(rel));
+            std::fs::create_dir_all(self.path(rel)).unwrap();
+            save_config(self.state(), config).unwrap();
+        }
+    }
+
+    fn current_name(v: &SessionView) -> Option<&str> {
+        v.current.as_ref().map(|c| c.name.as_str())
+    }
+
+    #[test]
+    fn session_commands_fail_before_loading_a_folder() {
+        let f = Fixture::new();
+        assert!(get_session(f.state()).is_none());
+        let err = perform(f.state(), ActionArg::Skip).err().unwrap();
+        assert!(err.contains("読み込まれていません"), "{err}");
+        assert!(undo(f.state()).is_err());
+        assert!(navigate(f.state(), true).is_err());
+        assert!(pending_deletions(f.state()).items.is_empty());
+    }
+
+    #[test]
+    fn start_session_scans_images_and_remembers_the_source() {
+        let f = Fixture::new();
+        let v = f.start();
+        assert_eq!((v.total, v.remaining, v.skipped), (3, 3, 0));
+        assert_eq!(current_name(&v), Some("1.png"));
+        assert_eq!(v.upcoming, vec![1, 2]);
+        assert_eq!(v.moved_counts, vec![0, 0]);
+        assert!(!v.can_undo);
+
+        // 次回の起動で同じフォルダを開けるよう、設定ファイルに書き戻している
+        let saved = config::load_or_create(&f.state().config_path).unwrap();
+        assert_eq!(saved.general.source_dir, Some(f.path("src")));
+        assert_eq!(get_session(f.state()).unwrap().generation, v.generation);
+    }
+
+    #[test]
+    fn start_session_reports_missing_folder() {
+        let f = Fixture::new();
+        assert!(start_session(f.state(), lossy(&f.path("nowhere")), false).is_err());
+    }
+
+    #[test]
+    fn move_skip_delete_and_undo_round_trip() {
+        let f = Fixture::new();
+        f.start();
+
+        let v = f.act(ActionArg::Move { target: 1 });
+        assert!(f.path("b/1.png").exists() && !f.path("src/1.png").exists());
+        assert_eq!(v.moved_counts, vec![0, 1]);
+        assert_eq!(current_name(&v), Some("2.png"));
+
+        let v = f.act(ActionArg::Skip);
+        assert_eq!((v.remaining, v.skipped), (2, 1));
+        assert_eq!(v.next_skipped, Some(1));
+
+        // 削除フォルダ未指定: ファイルは動かさず削除予定として記録するだけ
+        let v = f.act(ActionArg::Delete);
+        assert!(f.path("src/3.png").exists());
+        assert_eq!(v.pending_deletions, 1);
+        assert_eq!(v.history.len(), 3);
+        let summary = pending_deletions(f.state());
+        assert_eq!(summary.items.len(), 1);
+        assert!(summary.trash_dir.is_none());
+
+        let r = undo(f.state()).unwrap();
+        assert!(r.message.unwrap().contains("3.png"));
+        assert_eq!(r.view.pending_deletions, 0);
+        undo(f.state()).unwrap();
+        let r = undo(f.state()).unwrap();
+        assert!(f.path("src/1.png").exists() && !f.path("b/1.png").exists());
+        assert!(!r.view.can_undo);
+        assert_eq!(current_name(&r.view), Some("1.png"));
+        assert!(undo(f.state()).is_err());
+    }
+
+    #[test]
+    fn unknown_target_is_rejected_without_touching_files() {
+        let f = Fixture::new();
+        f.start();
+        assert!(perform(f.state(), ActionArg::Move { target: 9 }).is_err());
+        assert!(f.path("src/1.png").exists());
+        assert!(!get_session(f.state()).unwrap().can_undo);
+    }
+
+    #[test]
+    fn delete_moves_into_configured_delete_folder() {
+        let f = Fixture::new();
+        f.set_delete_folder("trash");
+        f.start();
+        f.act(ActionArg::Delete);
+        assert!(f.path("trash/1.png").exists() && !f.path("src/1.png").exists());
+        let summary = pending_deletions(f.state());
+        assert_eq!(summary.trash_dir, Some(lossy(&f.path("trash"))));
+        assert!(summary.items[0].in_trash);
+    }
+
+    #[test]
+    fn delete_folder_change_applies_to_running_session() {
+        let f = Fixture::new();
+        f.start();
+        f.set_delete_folder("trash");
+        f.act(ActionArg::Delete);
+        assert!(f.path("trash/1.png").exists());
+    }
+
+    #[test]
+    fn conflict_is_shown_and_can_keep_both() {
+        let f = Fixture::new();
+        write_dummy(&f.path("a/1.png"), 4, 4);
+        f.start();
+        let v = f.act(ActionArg::Move { target: 0 });
+        let c = v.conflict.expect("同名ファイルの確認になるはず");
+        assert_eq!(c.incoming.name, "1.png");
+        assert_eq!(c.existing.path, lossy(&f.path("a/1.png")));
+        assert!(c.existing.size.unwrap() > 0 && c.existing.modified.is_some());
+
+        let r = resolve_conflict(f.state(), ConflictChoice::KeepBoth).unwrap();
+        assert!(r.view.conflict.is_none());
+        assert!(!f.path("src/1.png").exists());
+        let in_a = std::fs::read_dir(f.path("a")).unwrap().count();
+        assert_eq!(in_a, 2, "既存と移動したファイルの両方が残る");
+        assert_eq!(current_name(&r.view), Some("2.png"));
+    }
+
+    #[test]
+    fn conflict_can_be_cancelled() {
+        let f = Fixture::new();
+        write_dummy(&f.path("a/1.png"), 4, 4);
+        f.start();
+        assert!(f.act(ActionArg::Move { target: 0 }).conflict.is_some());
+        let v = cancel_conflict(f.state()).unwrap();
+        assert!(v.conflict.is_none());
+        assert_eq!(current_name(&v), Some("1.png"));
+        assert!(f.path("src/1.png").exists());
+    }
+
+    #[test]
+    fn navigate_and_jump_back_to_skipped_image() {
+        let f = Fixture::new();
+        f.start();
+        f.act(ActionArg::Skip);
+        f.act(ActionArg::Move { target: 0 });
+        assert_eq!(current_name(&navigate(f.state(), false).unwrap()), Some("1.png"));
+        assert_eq!(current_name(&navigate(f.state(), true).unwrap()), Some("3.png"));
+        assert_eq!(current_name(&jump_to(f.state(), 0).unwrap()), Some("1.png"));
+        let err = jump_to(f.state(), 1).err().unwrap();
+        assert!(err.contains("振り分け済み"), "{err}");
+    }
+
+    #[test]
+    fn pending_deletions_survive_switching_source_and_are_finalized() {
+        let f = Fixture::new();
+        f.start();
+        f.act(ActionArg::Delete);
+        // 別のフォルダに切り替えても、前のフォルダの削除予定は終了時まで残す
+        std::fs::create_dir_all(f.path("other")).unwrap();
+        write_dummy(&f.path("other/x.png"), 4, 4);
+        let v = start_session(f.state(), lossy(&f.path("other")), false).unwrap();
+        assert_eq!(v.total, 1);
+        assert_eq!(v.pending_deletions, 1);
+        f.act(ActionArg::Delete);
+        assert_eq!(pending_deletions(f.state()).items.len(), 2);
+
+        let report = finalize_all(&f.state());
+        assert_eq!(report.deleted.len(), 2);
+        assert!(report.failed.is_empty());
+        assert!(!f.path("src/1.png").exists() && !f.path("other/x.png").exists());
+        // 削除予定にしていないファイルは残る
+        assert!(f.path("src/2.png").exists() && f.path("src/3.png").exists());
+    }
+
+    #[test]
+    fn invalid_config_is_not_saved() {
+        let f = Fixture::new();
+        let mut config = f.config().config;
+        config.targets.push(f.target("1", "b"));
+        let err = save_config(f.state(), config.clone()).err().unwrap();
+        assert!(err.contains("重複"), "{err}");
+        assert_eq!(f.config().config.targets.len(), 2);
+        assert!(validate_config(config).iter().any(|i| i.message.contains("重複")));
+    }
+
+    #[test]
+    fn reload_picks_up_hand_edits() {
+        let f = Fixture::new();
+        let path = f.state().config_path.clone();
+        let text = std::fs::read_to_string(&path).unwrap().replace("prefetch = 4", "prefetch = 7");
+        assert!(text.contains("prefetch = 7"), "既定値が変わったらテストを直す");
+        std::fs::write(&path, text).unwrap();
+        assert_eq!(reload_config(f.state()).unwrap().config.general.prefetch, 7);
+
+        std::fs::write(&path, "[general\n").unwrap();
+        assert!(reload_config(f.state()).is_err());
+        assert_eq!(f.config().config.general.prefetch, 7, "読めなければメモリ上の設定はそのまま");
+    }
+
+    #[test]
+    fn view_toggles_are_written_back() {
+        let f = Fixture::new();
+        let shown = f.config().config.general.show_paths;
+        assert_eq!(set_show_paths(f.state(), !shown).config.general.show_paths, !shown);
+        let mode = config::ViewMode::Focus;
+        assert_eq!(set_view_mode(f.state(), mode).config.general.view_mode, mode);
+        let saved = config::load_or_create(&f.state().config_path).unwrap();
+        assert_eq!((saved.general.show_paths, saved.general.view_mode), (!shown, mode));
+    }
+
+    #[test]
+    fn view_toggles_stay_in_memory_when_file_is_broken() {
+        let f = Fixture::new();
+        std::fs::write(&f.state().config_path, "[general\n").unwrap();
+        let mode = config::ViewMode::Focus;
+        assert_eq!(set_view_mode(f.state(), mode).config.general.view_mode, mode);
+        assert_eq!(std::fs::read_to_string(&f.state().config_path).unwrap(), "[general\n");
+    }
+
+    #[test]
+    fn broken_config_file_falls_back_to_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "targets = 1\n").unwrap();
+        let app = mock_app();
+        app.manage(AppState::new(path, dir.path().join("data")));
+        let payload = get_config(app.state::<AppState>());
+        assert!(payload.load_error.is_some());
+        assert!(payload.config.targets.is_empty());
+        assert!(!payload.formats.is_empty());
+    }
+
+    #[test]
+    fn list_subfolders_sorts_naturally_and_hides_dot_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        for d in ["10 夏", "2 春", ".hidden"] {
+            std::fs::create_dir(dir.path().join(d)).unwrap();
+        }
+        std::fs::write(dir.path().join("file.txt"), "").unwrap();
+        let names: Vec<String> =
+            list_subfolders(lossy(dir.path())).unwrap().iter().map(|p| fileops::file_name(Path::new(p))).collect();
+        assert_eq!(names, ["2 春", "10 夏"]);
+        assert!(list_subfolders(lossy(&dir.path().join("none"))).is_err());
+    }
+
+    #[test]
+    fn image_info_reads_size_and_rejects_stale_requests() {
+        let f = Fixture::new();
+        let v = f.start();
+        let info = tauri::async_runtime::block_on(image_info(f.state(), v.generation, 0)).unwrap();
+        assert_eq!((info.width, info.height), (8, 6));
+        assert_eq!(info.file.name, "1.png");
+        assert!(info.taken.is_none());
+
+        let stale = tauri::async_runtime::block_on(image_info(f.state(), v.generation + 100, 0));
+        assert!(stale.err().unwrap().contains("古い画面"));
+        assert!(tauri::async_runtime::block_on(image_info(f.state(), v.generation, 99)).is_err());
     }
 }
