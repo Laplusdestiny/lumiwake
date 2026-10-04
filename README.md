@@ -1,5 +1,7 @@
 # Lumiwake
 
+[![codecov](https://codecov.io/gh/Laplusdestiny/lumiwake/graph/badge.svg?token=RS1CLKQP0I)](https://codecov.io/gh/Laplusdestiny/lumiwake)
+
 キーボード操作で画像をすばやくフォルダへ振り分ける、軽量なデスクトップアプリです。
 
 > 🚧 開発初期段階です（MVP の手動仕分けを実装済み）。仕様・機能は変更される可能性があります。

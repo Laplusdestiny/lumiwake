@@ -103,5 +103,74 @@ mod tests {
         assert!(parse("/preview/x/1").is_none());
         assert!(parse("/preview/1/1/extra").is_none());
         assert!(parse("/../../etc/passwd").is_none());
+        assert!(parse("/conflict/1/other").is_none());
+        assert!(parse("/unknown/1/1").is_none());
+        assert!(parse("/preview/1").is_none());
+    }
+
+    use crate::decoder::tests::write_dummy;
+    use crate::fileops::{self, Action, Session};
+    use crate::state::SessionState;
+    use std::sync::Arc;
+
+    /// 2 枚の画像で仕分けを始めた状態（番号 1）を作る
+    fn state_with_session(dir: &std::path::Path) -> AppState {
+        let images: Vec<PathBuf> = ["a.png", "b.png"].iter().map(|n| dir.join(n)).collect();
+        for p in &images {
+            write_dummy(p, 300, 200);
+        }
+        let state = AppState::new(dir.join("config.toml"));
+        let session = Session::new(Arc::new(fileops::RealFs), images, None);
+        *state.session() =
+            Some(SessionState { session, generation: 1, source: dir.to_path_buf(), unsupported: Vec::new() });
+        state
+    }
+
+    fn size(enc: &Encoded) -> (u32, u32) {
+        let img = image::load_from_memory(&enc.bytes).unwrap();
+        (img.width(), img.height())
+    }
+
+    #[test]
+    fn serves_preview_and_thumbnail() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_with_session(dir.path());
+        let full = serve(&state, "/preview/1/0").unwrap();
+        assert_eq!(full.mime, "image/jpeg");
+        assert_eq!(size(&full), (300, 200));
+        assert_eq!(size(&serve(&state, "/thumb/1/1").unwrap()), (240, 160));
+    }
+
+    #[test]
+    fn rejects_stale_or_unknown_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_with_session(dir.path());
+        assert!(serve(&state, "/preview/2/0").unwrap_err().contains("古い画面"));
+        assert!(serve(&state, "/preview/1/5").unwrap_err().contains("見つかりません"));
+        assert!(serve(&state, "/nope").unwrap_err().contains("不正"));
+        assert!(serve(&state, "/conflict/1/incoming").unwrap_err().contains("確認中ではありません"));
+    }
+
+    #[test]
+    fn serves_moved_image_and_both_sides_of_a_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_with_session(dir.path());
+        let target = dir.path().join("t");
+        std::fs::create_dir(&target).unwrap();
+        // 移動した後も、移動先から表示できる
+        state
+            .session()
+            .as_mut()
+            .unwrap()
+            .session
+            .apply(Action::MoveTo { dir: target.clone(), label: "t".into() })
+            .unwrap();
+        assert!(!dir.path().join("a.png").exists());
+        assert_eq!(size(&serve(&state, "/preview/1/0").unwrap()), (300, 200));
+
+        write_dummy(&target.join("b.png"), 50, 40);
+        state.session().as_mut().unwrap().session.apply(Action::MoveTo { dir: target, label: "t".into() }).unwrap();
+        assert_eq!(size(&serve(&state, "/conflict/1/incoming").unwrap()), (300, 200));
+        assert_eq!(size(&serve(&state, "/conflict/1/existing").unwrap()), (50, 40));
     }
 }

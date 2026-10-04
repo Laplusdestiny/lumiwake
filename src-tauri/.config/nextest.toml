@@ -1,0 +1,7 @@
+# CI でテスト結果（JUnit）を Codecov に送るためのプロファイル
+# 出力先: target/nextest/ci/junit.xml
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
