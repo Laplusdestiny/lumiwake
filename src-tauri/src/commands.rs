@@ -539,8 +539,9 @@ mod tests {
             get_config(self.state())
         }
 
+        /// `a/1.png` のように書いた相対パス。Windows でも区切りがそろうよう要素ごとにつなぐ
         fn path(&self, rel: &str) -> PathBuf {
-            self.dir.path().join(rel)
+            rel.split('/').fold(self.dir.path().to_path_buf(), |p, part| p.join(part))
         }
 
         fn target(&self, key: &str, rel: &str) -> Target {
