@@ -63,6 +63,7 @@ npm ci                       # フロントの依存
 npm run tauri dev            # 開発起動
 npm run typecheck            # フロントの型チェック
 npm test                     # フロントのテスト（vitest）
+npm run test:coverage        # カバレッジ付き（coverage/lcov.info。CI で Codecov に送る）
 npm run tauri build          # パッケージ作成（Linux で HEIC/AVIF も含めるなら -- --features avif,heic）
 
 cd src-tauri
@@ -70,6 +71,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test                   # Rust のテスト
 cargo test --features avif,heic   # HEIC/AVIF も（libheif-dev・libheif-plugin-libde265・libdav1d-dev が必要）
+cargo llvm-cov nextest --profile ci --lcov --output-path lcov.info   # カバレッジ（CI と同じ。cargo-llvm-cov・cargo-nextest が必要）
 
 cd site && npm ci && npm run build   # 説明ページ
 ```
