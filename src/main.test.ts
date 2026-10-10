@@ -8,6 +8,7 @@ const listen = vi.hoisted(() => vi.fn());
 const checkForUpdates = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/path", () => ({ homeDir: async () => "/home/u/" }));
+vi.mock("@tauri-apps/api/app", () => ({ getVersion: async () => "0.2.0" }));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("./updater", () => ({ checkForUpdates }));
 
@@ -137,6 +138,13 @@ describe("キー入力", () => {
     store.config = makeConfig({ source_dir: "/home/u/inbox" });
     press("Enter");
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("start_session", { source: "/home/u/inbox", includeSubdirs: false }));
+  });
+
+  it("開始画面に起動時に取得したバージョンを表示する", async () => {
+    expect(store.version).toBe("0.2.0");
+    store.screen = "start";
+    (await import("./store")).notify();
+    expect(root().querySelector(".start-version")!.textContent).toBe("v0.2.0");
   });
 
   it("開始画面: ↑↓ で履歴から仕分け元を選ぶ", async () => {

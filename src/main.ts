@@ -1,4 +1,5 @@
 // Lumiwake の画面。表示とキー入力の受け渡しだけを行い、ファイル操作はすべて Rust コアに任せる。
+import { getVersion } from "@tauri-apps/api/app";
 import { homeDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorText, type Config } from "./api";
@@ -158,6 +159,7 @@ async function boot(): Promise<void> {
   } catch {
     store.home = null;
   }
+  store.version = await getVersion().catch(() => null);
   store.config = await api.getConfig();
   const session = await api.getSession();
   if (session) {

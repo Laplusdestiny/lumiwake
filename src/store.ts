@@ -10,6 +10,8 @@ export const store = {
   info: null as { generation: number; index: number; info: ImageInfo | null } | null,
   screen: "start" as Screen,
   home: null as string | null,
+  /** アプリのバージョン（開始画面に表示する） */
+  version: null as string | null,
   /** モーダル（終了確認など）を表示中。表示中は仕分けのキーを受け付けない */
   modal: false,
 };

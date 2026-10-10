@@ -24,6 +24,7 @@ beforeEach(() => {
   store.config = makeConfig({ source_dir: "/home/u/inbox", include_subdirs: true });
   store.session = null;
   store.home = "/home/u";
+  store.version = "0.2.0";
 });
 
 describe("renderStart", () => {
@@ -33,6 +34,13 @@ describe("renderStart", () => {
     expect(root.querySelector<HTMLInputElement>("#include-subdirs")!.checked).toBe(true);
     expect(startBtn().disabled).toBe(false);
     expect(root.querySelector('[data-action="back-to-sort"]')).toBeNull();
+    expect(root.querySelector(".start-version")!.textContent).toBe("v0.2.0");
+  });
+
+  it("バージョンを取得できなければ表示しない", () => {
+    store.version = null;
+    renderStart(root);
+    expect(root.querySelector(".start-version")).toBeNull();
   });
 
   it("仕分け元が未選択・振り分け先なし・設定の読み込み失敗を知らせる", () => {

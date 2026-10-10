@@ -38,6 +38,7 @@ export function renderStart(root: HTMLElement): void {
         <span>·</span>
         <span>Enter で開始</span>
         ${g.recent_sources?.length ? `<span>·</span><span>↑↓ で履歴から選択</span>` : ""}
+        ${store.version ? `<span class="start-version">v${esc(store.version)}</span>` : ""}
       </div>
     </div>
   </div>`;

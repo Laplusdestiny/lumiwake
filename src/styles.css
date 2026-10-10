@@ -388,6 +388,11 @@ input[type="radio"] {
   gap: 8px;
   margin-top: 18px;
 }
+.start-version {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--dim);
+}
 
 /* ---- 仕分け画面 ---- */
 .sorter {
