@@ -139,6 +139,14 @@ describe("キー入力", () => {
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("start_session", { source: "/home/u/inbox", includeSubdirs: false }));
   });
 
+  it("開始画面: ↑↓ で履歴から仕分け元を選ぶ", async () => {
+    store.screen = "start";
+    store.config = makeConfig({ source_dir: "/home/u/a", recent_sources: ["/home/u/a", "/home/u/b"] });
+    expect(press("ArrowDown")).toBe(true);
+    press("Enter");
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("start_session", { source: "/home/u/b", includeSubdirs: false }));
+  });
+
   it("Ctrl+Q で終了する", async () => {
     press("KeyQ", { ctrlKey: true });
     await vi.waitFor(() => expect(commands()).toContain("exit_app"));
@@ -179,6 +187,16 @@ describe("クリック", () => {
     expect(store.screen).toBe("start");
     await clickAction('[data-action="back-to-sort"]');
     expect(store.screen).toBe("sort");
+  });
+
+  it("開始画面: 履歴から選ぶ・履歴から外す", async () => {
+    store.screen = "start";
+    store.config = makeConfig({ source_dir: "/home/u/a", recent_sources: ["/home/u/a", "/home/u/b"] });
+    (await import("./store")).notify();
+    await clickAction('[data-action="choose-source"][data-path="/home/u/b"]');
+    expect(root().querySelector(".path-box")!.textContent).toBe("~/b");
+    await clickAction('[data-action="forget-source"][data-path="/home/u/a"]');
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("forget_source", { path: "/home/u/a" }));
   });
 
   it("右クリックメニューを出さない", () => {
