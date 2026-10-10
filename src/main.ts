@@ -1,4 +1,5 @@
 // Lumiwake の画面。表示とキー入力の受け渡しだけを行い、ファイル操作はすべて Rust コアに任せる。
+import { getVersion } from "@tauri-apps/api/app";
 import { homeDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorText, type Config } from "./api";
@@ -16,7 +17,7 @@ import {
   renderSettings,
 } from "./views/settings";
 import { handleSorterKey, initSidebarResize, onModeChange, renderSorter, setMode, togglePaths } from "./views/sorter";
-import { pickSource, renderStart, startFromForm } from "./views/start";
+import { chooseSource, forgetSource, moveRecentSource, pickSource, renderStart, startFromForm } from "./views/start";
 import { checkForUpdates } from "./updater";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
@@ -81,6 +82,7 @@ window.addEventListener("keydown", (e) => {
         return handleSorterKey(combo, e);
       case "start":
         if (combo === "Enter") return void startFromForm(), true;
+        if (combo === "Up" || combo === "Down") return moveRecentSource(combo === "Down" ? 1 : -1), true;
         if (combo === "Escape" && store.session) return ((store.screen = "sort"), notify()), true;
         return false;
       case "settings":
@@ -126,6 +128,10 @@ document.addEventListener("click", async (e) => {
         return notify();
       case "pick-source":
         return await pickSource();
+      case "choose-source":
+        return chooseSource(el.dataset.path!);
+      case "forget-source":
+        return await forgetSource(el.dataset.path!);
       case "start":
         return await startFromForm();
       case "quit":
@@ -153,6 +159,7 @@ async function boot(): Promise<void> {
   } catch {
     store.home = null;
   }
+  store.version = await getVersion().catch(() => null);
   store.config = await api.getConfig();
   const session = await api.getSession();
   if (session) {

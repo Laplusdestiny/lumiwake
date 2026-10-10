@@ -17,6 +17,8 @@ export interface Config {
   version: number;
   general: {
     source_dir?: string;
+    /** 最近使った仕分け元フォルダ（新しい順） */
+    recent_sources?: string[];
     include_subdirs: boolean;
     delete_folder?: string;
     on_exit: OnExit;
@@ -140,6 +142,7 @@ export const api = {
   validateConfig: (config: Config) => invoke<Issue[]>("validate_config", { config }),
   saveConfig: (config: Config) => invoke<ConfigPayload>("save_config", { config }),
   reloadConfig: () => invoke<ConfigPayload>("reload_config"),
+  forgetSource: (path: string) => invoke<ConfigPayload>("forget_source", { path }),
   setViewMode: (mode: ViewMode) => invoke<ConfigPayload>("set_view_mode", { mode }),
   setShowPaths: (show: boolean) => invoke<ConfigPayload>("set_show_paths", { show }),
   openConfigFile: () => invoke<void>("open_config_file"),

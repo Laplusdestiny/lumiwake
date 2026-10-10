@@ -17,6 +17,8 @@ Optionally set a delete folder under **一般** (General). See [Safety](/lumiwak
 
 Choose the folder containing the images to sort and press **読み込んで開始** (<kbd>Enter</kbd>). You can include subfolders. Destination folders and the delete folder are excluded automatically.
 
+Recently used folders (up to 10) are listed on the start screen; pick one by clicking or with <kbd>↑</kbd> <kbd>↓</kbd>. Remove an entry from the history with × (the folder itself is not touched).
+
 ## 3. Sort with keys
 
 | Key (default) | Action |
