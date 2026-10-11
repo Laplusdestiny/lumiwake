@@ -4,13 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const actions = vi.hoisted(() => ({ startSession: vi.fn() }));
 const dialog = vi.hoisted(() => ({ open: vi.fn() }));
 const toast = vi.hoisted(() => vi.fn());
+const api = vi.hoisted(() => ({ forgetSource: vi.fn() }));
+vi.mock("../api", () => ({ api, errorText: String }));
 vi.mock("../actions", () => actions);
 vi.mock("@tauri-apps/plugin-dialog", () => dialog);
 vi.mock("../toast", () => ({ toast }));
 
 import { store } from "../store";
 import { makeConfig, makeSession } from "../test/fixtures";
-import { pickSource, renderStart, startFromForm } from "./start";
+import { chooseSource, forgetSource, moveRecentSource, pickSource, renderStart, startFromForm } from "./start";
 
 let root: HTMLElement;
 const startBtn = () => root.querySelector<HTMLButtonElement>('[data-action="start"]')!;
@@ -22,6 +24,7 @@ beforeEach(() => {
   store.config = makeConfig({ source_dir: "/home/u/inbox", include_subdirs: true });
   store.session = null;
   store.home = "/home/u";
+  store.version = "0.2.0";
 });
 
 describe("renderStart", () => {
@@ -31,6 +34,13 @@ describe("renderStart", () => {
     expect(root.querySelector<HTMLInputElement>("#include-subdirs")!.checked).toBe(true);
     expect(startBtn().disabled).toBe(false);
     expect(root.querySelector('[data-action="back-to-sort"]')).toBeNull();
+    expect(root.querySelector(".start-version")!.textContent).toBe("v0.2.0");
+  });
+
+  it("バージョンを取得できなければ表示しない", () => {
+    store.version = null;
+    renderStart(root);
+    expect(root.querySelector(".start-version")).toBeNull();
   });
 
   it("仕分け元が未選択・振り分け先なし・設定の読み込み失敗を知らせる", () => {
@@ -86,5 +96,72 @@ describe("開始", () => {
     renderStart(root);
     await startFromForm();
     expect(toast).toHaveBeenCalledWith("フォルダを読み込めません", "error");
+  });
+});
+
+describe("最近使ったフォルダ", () => {
+  const recent = ["/home/u/inbox", "/mnt/nas/写真", "/home/u/old/写真"];
+  const selected = () => root.querySelector(".recent-item.selected .recent-path")?.textContent;
+
+  beforeEach(() => {
+    store.config = makeConfig({ source_dir: "/home/u/inbox", recent_sources: recent });
+    // 前のテストで選んだフォルダを残さない
+    chooseSource("/home/u/inbox");
+  });
+
+  it("同名フォルダも区別できるよう、名前とパスを並べて前回の仕分け元を選択中にする", () => {
+    renderStart(root);
+    const items = [...root.querySelectorAll(".recent-item")];
+    expect(items.map((i) => i.querySelector(".recent-name")!.textContent)).toEqual(["inbox", "写真", "写真"]);
+    expect(items.map((i) => i.querySelector(".recent-path")!.textContent)).toEqual(["~/inbox", "/mnt/nas/写真", "~/old/写真"]);
+    expect(selected()).toBe("~/inbox");
+    expect(root.textContent).toContain("↑↓ で履歴から選択");
+  });
+
+  it("履歴がなければ一覧を出さない", () => {
+    store.config = makeConfig({ source_dir: "/home/u/inbox" });
+    renderStart(root);
+    expect(root.querySelector(".recent")).toBeNull();
+    expect(root.textContent).not.toContain("↑↓");
+  });
+
+  it("選んだフォルダで読み込む", async () => {
+    chooseSource("/mnt/nas/写真");
+    expect(root.querySelector(".path-box")!.textContent).toBe("/mnt/nas/写真");
+    expect(selected()).toBe("/mnt/nas/写真");
+    await startFromForm();
+    expect(actions.startSession).toHaveBeenCalledWith("/mnt/nas/写真", false);
+  });
+
+  it("↑↓ で履歴の中を移り、端で止まる", () => {
+    moveRecentSource(1);
+    moveRecentSource(1);
+    expect(selected()).toBe("~/old/写真");
+    moveRecentSource(1);
+    expect(selected()).toBe("~/old/写真");
+    moveRecentSource(-1);
+    moveRecentSource(-1);
+    moveRecentSource(-1);
+    expect(selected()).toBe("~/inbox");
+  });
+
+  it("ダイアログで履歴にないフォルダを選んでいれば、↓ で履歴の先頭へ", async () => {
+    dialog.open.mockResolvedValue("/tmp/new");
+    await pickSource();
+    expect(selected()).toBeUndefined();
+    moveRecentSource(1);
+    expect(selected()).toBe("~/inbox");
+  });
+
+  it("履歴から外したら、選んでいたフォルダの選択も外す", async () => {
+    chooseSource("/mnt/nas/写真");
+    const after = makeConfig({ source_dir: "/home/u/inbox", recent_sources: ["/home/u/inbox", "/home/u/old/写真"] });
+    api.forgetSource.mockResolvedValue(after);
+    await forgetSource("/mnt/nas/写真");
+    expect(api.forgetSource).toHaveBeenCalledWith("/mnt/nas/写真");
+    expect(store.config).toBe(after);
+    renderStart(root);
+    expect(root.querySelector(".path-box")!.textContent).toBe("~/inbox");
+    expect(root.querySelectorAll(".recent-item")).toHaveLength(2);
   });
 });
