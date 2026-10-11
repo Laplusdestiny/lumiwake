@@ -47,6 +47,9 @@ pub struct General {
     /// 前回使った仕分け元フォルダ
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_dir: Option<PathBuf>,
+    /// 最近使った仕分け元フォルダ（新しい順、最大 [`RECENT_SOURCES_LIMIT`] 件）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recent_sources: Vec<PathBuf>,
     /// サブフォルダも読み込むか（読み込み時に毎回変更できる）
     pub include_subdirs: bool,
     /// 削除フォルダ。未指定なら削除キーでファイルを動かさず、削除予定として記録する
@@ -67,6 +70,7 @@ impl Default for General {
     fn default() -> Self {
         General {
             source_dir: None,
+            recent_sources: Vec::new(),
             include_subdirs: false,
             delete_folder: None,
             on_exit: OnExit::Confirm,
@@ -173,7 +177,10 @@ impl Target {
 }
 
 /// 設定ファイルの形式のバージョン。既定値を変えたときの移行に使う
-pub const CONFIG_VERSION: u32 = 2;
+pub const CONFIG_VERSION: u32 = 3;
+
+/// 仕分け元フォルダの履歴に残す件数
+pub const RECENT_SOURCES_LIMIT: usize = 10;
 
 fn legacy_version() -> u32 {
     0
@@ -254,6 +261,14 @@ impl Config {
         if empty(&self.general.source_dir) {
             self.general.source_dir = None;
         }
+        let mut recent: Vec<PathBuf> = Vec::new();
+        for p in std::mem::take(&mut self.general.recent_sources) {
+            if !p.as_os_str().is_empty() && !recent.contains(&p) {
+                recent.push(p);
+            }
+        }
+        recent.truncate(RECENT_SOURCES_LIMIT);
+        self.general.recent_sources = recent;
         self.general.prefetch = self.general.prefetch.clamp(0, 16);
         self.ai.normalize();
     }
@@ -317,6 +332,22 @@ impl Config {
         issues
     }
 
+    /// 仕分け元として使ったフォルダを前回の仕分け元にし、履歴の先頭に置く
+    pub fn remember_source(&mut self, dir: &Path) {
+        self.general.source_dir = Some(dir.to_path_buf());
+        self.general.recent_sources.retain(|p| p != dir);
+        self.general.recent_sources.insert(0, dir.to_path_buf());
+        self.general.recent_sources.truncate(RECENT_SOURCES_LIMIT);
+    }
+
+    /// 履歴から外す。前回の仕分け元だった場合は、残った履歴の先頭を前回の仕分け元にする
+    pub fn forget_source(&mut self, dir: &Path) {
+        self.general.recent_sources.retain(|p| p != dir);
+        if self.general.source_dir.as_deref() == Some(dir) {
+            self.general.source_dir = self.general.recent_sources.first().cloned();
+        }
+    }
+
     pub fn has_errors(issues: &[Issue]) -> bool {
         issues.iter().any(|i| i.severity == Severity::Error)
     }
@@ -337,6 +368,7 @@ const HEADER: &str = "\
 # キーの書き方: \"1\"、\"A\"、\"Ctrl+1\"、\"Shift+Alt+F2\"、\"Space\"、\"Delete\"、\"Left\"、\"Num1\"（テンキー）など
 # on_exit: \"confirm\"（終了時に完全削除するか確認）/ \"delete\"（確認せずに完全削除）
 # delete_folder を書かない場合、削除キーではファイルを動かさず「削除予定」として記録します。
+# recent_sources: 最近使った仕分け元フォルダ（新しい順、10 件まで）。開始画面で選べます。
 #
 # 振り分け先の例:
 # [[targets]]
@@ -377,7 +409,13 @@ impl Config {
             }
         }
         if self.version < 2 {
-            // v1 の既定だった Ctrl+Shift+P は WebView2 の印刷と衝突しうるため、既定の Ctrl+Shift+O へ移す。
+            // 履歴ができる前の設定では、前回の仕分け元を履歴の 1 件目にする
+            if self.general.recent_sources.is_empty() {
+                self.general.recent_sources.extend(self.general.source_dir.clone());
+            }
+        }
+        if self.version < 3 {
+            // v2 までの既定だった Ctrl+Shift+P は WebView2 の印刷と衝突しうるため、既定の Ctrl+Shift+O へ移す。
             // 自分で別のキーに変えていた場合はそのまま
             if self.keys.toggle_paths == "Ctrl+Shift+P" {
                 self.keys.toggle_paths = ActionKeys::default().toggle_paths;
@@ -503,17 +541,20 @@ mod tests {
     }
 
     #[test]
-    fn v1_default_path_toggle_key_moves_off_the_webview_print_key() {
-        let c = parse("version = 1\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n", Path::new("x")).unwrap();
-        assert_eq!(c.version, CONFIG_VERSION);
-        assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+O");
+    fn old_default_path_toggle_key_moves_off_the_webview_print_key() {
+        for version in [1, 2] {
+            let c = parse(&format!("version = {version}\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n"), Path::new("x"))
+                .unwrap();
+            assert_eq!(c.version, CONFIG_VERSION);
+            assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+O", "v{version} の既定のまま");
+        }
 
         // 自分で変えていたキーはそのまま
         let c = parse("version = 1\n[keys]\ntoggle_paths = \"Alt+P\"\n", Path::new("x")).unwrap();
         assert_eq!(c.keys.toggle_paths, "Alt+P");
 
         // 最新の形式で P を選んだ場合は尊重する（警告は出る）
-        let c = parse("version = 2\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n", Path::new("x")).unwrap();
+        let c = parse("version = 3\n[keys]\ntoggle_paths = \"Ctrl+Shift+P\"\n", Path::new("x")).unwrap();
         assert_eq!(c.keys.toggle_paths, "Ctrl+Shift+P");
         assert!(c
             .validate()
@@ -572,6 +613,59 @@ mod tests {
         let mut c = Config::default();
         c.targets.push(target("Ctrl+Shift+D", "かぶり", Path::new("/photos")));
         assert!(c.validate().iter().any(|i| i.severity == Severity::Error && i.key.as_deref() == Some("Ctrl+Shift+D")));
+    }
+
+    #[test]
+    fn old_files_seed_recent_sources_from_the_last_source() {
+        let c = parse("version = 1\n[general]\nsource_dir = \"/photos/inbox\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.general.recent_sources, vec![PathBuf::from("/photos/inbox")]);
+
+        // 最新の形式で履歴を空にしていれば、そのまま
+        let c = parse("version = 2\n[general]\nsource_dir = \"/photos/inbox\"\n", Path::new("x")).unwrap();
+        assert!(c.general.recent_sources.is_empty());
+    }
+
+    #[test]
+    fn recent_sources_keep_newest_first_without_duplicates() {
+        let mut c = Config::default();
+        for i in 0..RECENT_SOURCES_LIMIT + 2 {
+            c.remember_source(&PathBuf::from(format!("/photos/{i}")));
+        }
+        let last = RECENT_SOURCES_LIMIT + 1;
+        assert_eq!(c.general.recent_sources.len(), RECENT_SOURCES_LIMIT, "古いものから押し出される");
+        assert_eq!(c.general.recent_sources[0], PathBuf::from(format!("/photos/{last}")));
+        assert_eq!(c.general.source_dir, Some(PathBuf::from(format!("/photos/{last}"))));
+
+        // もう一度使ったフォルダは先頭へ移り、重複しない
+        c.remember_source(Path::new("/photos/5"));
+        assert_eq!(c.general.recent_sources[0], PathBuf::from("/photos/5"));
+        assert_eq!(c.general.recent_sources.iter().filter(|p| p.ends_with("5")).count(), 1);
+        assert_eq!(c.general.recent_sources.len(), RECENT_SOURCES_LIMIT);
+    }
+
+    #[test]
+    fn forgetting_the_last_source_falls_back_to_the_next_one() {
+        let mut c = Config::default();
+        c.remember_source(Path::new("/a"));
+        c.remember_source(Path::new("/b"));
+        c.forget_source(Path::new("/a"));
+        assert_eq!(c.general.recent_sources, vec![PathBuf::from("/b")]);
+        assert_eq!(c.general.source_dir, Some(PathBuf::from("/b")), "前回の仕分け元は変わらない");
+
+        c.forget_source(Path::new("/b"));
+        assert!(c.general.recent_sources.is_empty());
+        assert_eq!(c.general.source_dir, None);
+    }
+
+    #[test]
+    fn hand_written_recent_sources_are_cleaned_up() {
+        let mut list: Vec<String> = (0..RECENT_SOURCES_LIMIT + 3).map(|i| format!("\"/p/{i}\"")).collect();
+        list.insert(1, "\"\"".into());
+        list.insert(2, "\"/p/0\"".into());
+        let text = format!("version = 2\n[general]\nrecent_sources = [{}]\n", list.join(", "));
+        let c = parse(&text, Path::new("x")).unwrap();
+        assert_eq!(c.general.recent_sources.len(), RECENT_SOURCES_LIMIT);
+        assert_eq!(c.general.recent_sources[..2], [PathBuf::from("/p/0"), PathBuf::from("/p/1")], "空と重複は除く");
     }
 
     #[test]

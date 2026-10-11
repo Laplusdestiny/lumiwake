@@ -17,6 +17,7 @@ description: config.toml の項目一覧
 ```toml
 [general]
 source_dir = "/home/me/Pictures/未整理"  # 前回の仕分け元（自動で保存）
+recent_sources = ["/home/me/Pictures/未整理", "/mnt/nas/写真"]  # 最近使った仕分け元（新しい順、10 件まで。自動で保存）
 include_subdirs = false                  # サブフォルダも読み込む
 delete_folder = "/home/me/Pictures/削除候補"  # 省略すると「削除予定として記録」
 on_exit = "confirm"                      # "confirm"（確認する） / "delete"（確認せずに削除）
