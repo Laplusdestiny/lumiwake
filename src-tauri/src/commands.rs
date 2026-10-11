@@ -104,6 +104,14 @@ fn remember(state: &AppState, patch: impl Fn(&mut Config)) {
     }
 }
 
+/// 仕分け元フォルダの履歴から外す
+#[tauri::command]
+pub fn forget_source(state: State<'_, AppState>, path: String) -> ConfigPayload {
+    let path = PathBuf::from(path);
+    remember(&state, |c| c.forget_source(&path));
+    config_payload(&state)
+}
+
 /// 表示モードの切り替え（次回の起動時も同じモードにする）
 #[tauri::command]
 pub fn set_view_mode(state: State<'_, AppState>, mode: config::ViewMode) -> ConfigPayload {
@@ -320,7 +328,7 @@ pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs
 
     // 前回の仕分け元として覚えておく（設定ファイルに誤りがあって保存できなくても仕分けは続ける）
     remember(&state, |c| {
-        c.general.source_dir = Some(source.clone());
+        c.remember_source(&source);
         c.general.include_subdirs = include_subdirs;
     });
 
@@ -853,6 +861,7 @@ mod tests {
         // 次回の起動で同じフォルダを開けるよう、設定ファイルに書き戻している
         let saved = config::load_or_create(&f.state().config_path).unwrap();
         assert_eq!(saved.general.source_dir, Some(f.path("src")));
+        assert_eq!(saved.general.recent_sources, vec![f.path("src")], "履歴にも残す");
         assert_eq!(get_session(f.state()).unwrap().generation, v.generation);
     }
 
@@ -1026,6 +1035,17 @@ mod tests {
         assert_eq!(set_view_mode(f.state(), mode).config.general.view_mode, mode);
         let saved = config::load_or_create(&f.state().config_path).unwrap();
         assert_eq!((saved.general.show_paths, saved.general.view_mode), (!shown, mode));
+    }
+
+    #[test]
+    fn forget_source_removes_it_from_the_history() {
+        let f = Fixture::new();
+        f.start();
+        let payload = forget_source(f.state(), lossy(&f.path("src")));
+        assert!(payload.config.general.recent_sources.is_empty());
+        assert_eq!(payload.config.general.source_dir, None);
+        let saved = config::load_or_create(&f.state().config_path).unwrap();
+        assert!(saved.general.recent_sources.is_empty(), "設定ファイルにも書き戻す");
     }
 
     #[test]

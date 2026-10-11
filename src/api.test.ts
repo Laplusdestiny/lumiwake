@@ -18,6 +18,7 @@ describe("api", () => {
     ["validateConfig", [makeConfig().config], "validate_config", { config: makeConfig().config }],
     ["saveConfig", [makeConfig().config], "save_config", { config: makeConfig().config }],
     ["reloadConfig", [], "reload_config", undefined],
+    ["forgetSource", ["/a"], "forget_source", { path: "/a" }],
     ["setViewMode", ["focus"], "set_view_mode", { mode: "focus" }],
     ["setShowPaths", [false], "set_show_paths", { show: false }],
     ["openConfigFile", [], "open_config_file", undefined],

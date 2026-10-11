@@ -320,10 +320,78 @@ input[type="radio"] {
   font-size: 13px;
   font-weight: 700;
 }
+.recent {
+  margin: -4px 0 12px;
+}
+.recent-head {
+  margin-bottom: 4px;
+}
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+.recent-item:hover,
+.recent-item.selected {
+  background: var(--surface);
+}
+.recent-item.selected {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.recent-pick {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 10px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.recent-name {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.recent-path {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.recent-forget {
+  border-color: transparent;
+  color: var(--dim);
+  opacity: 0;
+}
+.recent-item:hover .recent-forget,
+.recent-forget:focus-visible {
+  opacity: 1;
+}
 .start-foot {
   display: flex;
   gap: 8px;
   margin-top: 18px;
+}
+.start-version {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--dim);
 }
 
 /* ---- 仕分け画面 ---- */

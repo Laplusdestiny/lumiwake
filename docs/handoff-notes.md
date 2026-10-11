@@ -66,7 +66,7 @@ MVP（手動仕分け）を実装した。詳細は PR と各コミットを参�
 
 - 着手範囲: 土台（Suggester・設定・SQLite キャッシュ）→ 候補ストリップ UI → systemone → local → 設定画面・キー衝突対策 → CI・説明ページ
 - 「該当なし」カード＝Space（スキップ）は開発者が確認済み（2026-10-03）
-- 既定の `toggle_paths` は WebView2 の印刷と衝突しうる Ctrl+Shift+P から Ctrl+Shift+O へ変更（CONFIG_VERSION 2、旧既定のままの設定だけ自動で移行）
+- 既定の `toggle_paths` は WebView2 の印刷と衝突しうる Ctrl+Shift+P から Ctrl+Shift+O へ変更（CONFIG_VERSION 3。v2 は main 側の仕分け元履歴の移行で使用済み。旧既定のままの設定だけ自動で移行）
 - 一括確認画面（`future-batch-review.html`）は実装しない
 - Phase 1（土台）の実装で決めたこと:
   - 振り分け先の識別子は、正規化したフルパス（`suggest/choices.rs::target_id`）。フォルダを改名・移動すると別の振り分け先として扱い、キャッシュは引き継がない
