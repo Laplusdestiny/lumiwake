@@ -3,7 +3,8 @@
 //! 仕様は Cloudflare の公式モデルページと、その入出力スキーマ（schema-input.json / schema-output.json）に従う。
 //! - リクエスト: `model`・`state`・`questions` が必須、画像は `images`（PNG/JPEG/WebP の埋め込みのみ。リモート URL は不可）
 //! - 1 画像につき choice 型の質問 1 問。選択肢は「現在の振り分け先＋該当なし」
-//! - レスポンス: `answers.<質問 ID> = { type: "choice", choice, probabilities, confidence }`
+//! - レスポンス: `answers.<質問 ID> = { type: "choice", choice, probabilities, confidence }`。
+//!   REST API（`/ai/run`）では Cloudflare 共通の `{ result, success, errors, messages }` に包まれて返る
 //!
 //! 選択肢の ID にはフォルダ名やパスを使わず、`f0`・`f1`…と `none` を使う（API に渡す文字列を最小にし、
 //! 日本語や記号による制約も避ける）。対応表は呼び出しごとに作り、レスポンスの解釈に使う。
@@ -100,7 +101,16 @@ pub fn build_request(model: &str, choices: &[Choice], jpeg: &[u8]) -> Result<Req
 /// レスポンスの本文から診断結果を作る。形が仕様と違うときはエラー（推測で補わない）
 pub fn parse_response(body: &[u8], options: &[(String, Option<String>)]) -> Result<Suggestion, String> {
     let v: Value = serde_json::from_slice(body).map_err(|_| "応答を JSON として解釈できません".to_string())?;
-    let answer = v
+    // REST API の包みを外す。包みのない形（Workers バインディングや自前ホスト）はそのまま読む
+    let output = match v.get("result") {
+        Some(_) if v.get("success").and_then(Value::as_bool) == Some(false) => {
+            let detail = error_message(body).map(|m| format!("（{m}）")).unwrap_or_default();
+            return Err(format!("API がエラーを返しました{detail}"));
+        }
+        Some(r) => r.as_object().ok_or_else(|| "応答の result がオブジェクトではありません".to_string())?,
+        None => v.as_object().ok_or_else(|| "応答がオブジェクトではありません".to_string())?,
+    };
+    let answer = output
         .get("answers")
         .and_then(|a| a.get(QUESTION_ID))
         .ok_or_else(|| "応答に回答（answers）が含まれていません".to_string())?;
@@ -215,11 +225,15 @@ mod tests {
         assert!(build_request("clef", &max, b"x").is_ok(), "該当なしを含めて 255 個");
     }
 
+    /// Cloudflare の REST API（`/ai/run`）が返す形。モデルの出力は `result` に包まれる（2026-10-24 に実 API で確認）
     fn response(probs: Value) -> Vec<u8> {
         serde_json::to_vec(&json!({
-            "model": "clef-flash",
-            "answers": { "dest": { "type": "choice", "choice": "f0", "probabilities": probs, "confidence": 0.9 } },
-            "usage": { "input_tokens": 300, "output_tokens": 4 }
+            "result": {
+                "model": "clef-flash",
+                "answers": { "dest": { "type": "choice", "choice": "f0", "probabilities": probs, "confidence": 0.9 } },
+                "usage": { "input_tokens": 300, "output_tokens": 4 }
+            },
+            "success": true, "errors": [], "messages": []
         }))
         .unwrap()
     }
@@ -232,6 +246,23 @@ mod tests {
         assert_eq!(s.kind, ScoreKind::Probability);
         assert_eq!(s.scores, vec![Scored { id: "/p/a".into(), score: 0.7 }, Scored { id: "/p/b".into(), score: 0.2 }]);
         assert!((s.none_of_above.unwrap() - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn unwrapped_model_output_is_also_accepted() {
+        // Workers バインディングや自前ホストは包まずにモデルの出力をそのまま返す
+        let req = build_request("clef", &[choice("/p/a", "a", "")], b"x").unwrap();
+        let body = br#"{"model":"clef","answers":{"dest":{"type":"choice","choice":"f0","probabilities":{"f0":0.6,"none":0.4}}}}"#;
+        let s = parse_response(body, &req.options).unwrap();
+        assert_eq!(s.scores[0].score, 0.6);
+    }
+
+    #[test]
+    fn unsuccessful_envelope_is_an_error_with_cloudflare_message() {
+        let req = build_request("clef", &[choice("/p/a", "a", "")], b"x").unwrap();
+        let body = br#"{"result":null,"success":false,"errors":[{"code":5006,"message":"Capacity temporarily exceeded"}],"messages":[]}"#;
+        let e = parse_response(body, &req.options).unwrap_err();
+        assert!(e.contains("Capacity temporarily exceeded"), "{e}");
     }
 
     #[test]
@@ -250,6 +281,8 @@ mod tests {
         assert!(parse_response(br#"{"answers":{}}"#, o).is_err());
         assert!(parse_response(br#"{"answers":{"dest":{"type":"score","score":1}}}"#, o).is_err());
         assert!(parse_response(br#"{"answers":{"dest":{"type":"choice"}}}"#, o).is_err());
+        assert!(parse_response(br#"{"result":{},"success":true}"#, o).is_err());
+        assert!(parse_response(br#"{"result":"text","success":true}"#, o).is_err());
         assert!(parse_response(&response(json!({"f0": 1.5})), o).is_err(), "範囲外の確率");
         assert!(parse_response(&response(json!({"f0": "high"})), o).is_err());
     }
@@ -389,7 +422,12 @@ impl Suggester for SystemOneSuggester {
         if resp.status != 200 {
             return Err(SuggestError::Failed(describe_failure(resp.status, &resp.body)));
         }
-        parse_response(&resp.body, &request.options).map_err(SuggestError::Failed)
+        parse_response(&resp.body, &request.options).map_err(|e| {
+            // 応答の形が想定と違うときの切り分け用。応答本文には API キーも送った画像も含まれない
+            let head: String = String::from_utf8_lossy(&resp.body).chars().take(500).collect();
+            eprintln!("[lumiwake] systemone: 応答を解釈できません: {e}\n  応答の先頭: {head}");
+            SuggestError::Failed(e)
+        })
     }
 }
 
@@ -444,10 +482,13 @@ mod transport_tests {
 
     fn ok_body() -> Vec<u8> {
         serde_json::to_vec(&json!({
-            "model": "clef-flash",
-            "answers": { "dest": { "type": "choice", "choice": "f1", "confidence": 0.8,
-                "probabilities": { "f0": 0.1, "f1": 0.8, "none": 0.1 } } },
-            "usage": { "input_tokens": 1, "output_tokens": 1 }
+            "result": {
+                "model": "clef-flash",
+                "answers": { "dest": { "type": "choice", "choice": "f1", "confidence": 0.8,
+                    "probabilities": { "f0": 0.1, "f1": 0.8, "none": 0.1 } } },
+                "usage": { "input_tokens": 1, "output_tokens": 1 }
+            },
+            "success": true, "errors": [], "messages": []
         }))
         .unwrap()
     }
@@ -527,10 +568,13 @@ mod transport_tests {
     #[test]
     fn connection_test_sends_only_a_synthetic_image_and_reports_the_model() {
         let body = serde_json::to_vec(&json!({
-            "model": "clef-flash",
-            "answers": { "dest": { "type": "choice", "choice": "f0", "confidence": 0.5,
-                "probabilities": { "f0": 0.5, "f1": 0.3, "none": 0.2 } } },
-            "usage": { "input_tokens": 1, "output_tokens": 1 }
+            "result": {
+                "model": "clef-flash",
+                "answers": { "dest": { "type": "choice", "choice": "f0", "confidence": 0.5,
+                    "probabilities": { "f0": 0.5, "f1": 0.3, "none": 0.2 } } },
+                "usage": { "input_tokens": 1, "output_tokens": 1 }
+            },
+            "success": true, "errors": [], "messages": []
         }))
         .unwrap();
         let mock = Mock::new(Ok((200, body)));

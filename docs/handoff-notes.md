@@ -77,8 +77,9 @@ MVP（手動仕分け）を実装した。詳細は PR と各コミットを参�
 - Phase 3（systemone）で確認・決めたこと（2026-10-03、Cloudflare の公式モデルページと schema-input.json / schema-output.json で確認）:
   - リクエスト: `model`・`state`・`questions` ＋ `images`（`{content_type, base64}`）。質問は choice 型 1 問（ID `dest`）。選択肢の ID は `f0`・`f1`…と `none` で、フォルダ名・パスは API に渡さない
   - レスポンス: `answers.dest = { type: "choice", choice, probabilities{選択肢 ID: 確率}, confidence }`、`usage = { input_tokens, output_tokens }`。形が違うときはエラーにし、推測で補わない
+  - REST API（`/ai/run`）では、上記のモデル出力が Cloudflare 共通の `{ result, success, errors, messages }` に包まれて返る（2026-10-24 に実 API で確認。schema-output.json は包みの中身の形）。`success: false` はエラー。包みのない形（Workers バインディング・自前ホスト）も読む。解釈できない応答は先頭 500 文字を stderr に出す
   - `model` はエンドポイント末尾（`clef` / `clef-flash`）から判別し、設定の `model` を明示した場合は一致を検証（食い違うと API が 400）。エンドポイントの `{account}` が未置換なら送らない。https 以外には送らない（ローカルの自前ホスト確認用に localhost の http のみ許可）
-  - HTTP クライアントは `ureq`（rustls）。テストは Transport を差し替えたモックと、ローカル TCP サーバーのみで、外部 API は叩かない。**実 API での確認は未実施（開発者の API キーで手動確認が必要）**
+  - HTTP クライアントは `ureq`（rustls）。テストは Transport を差し替えたモックと、ローカル TCP サーバーのみで、外部 API は叩かない。実 API（clef-flash）では、応答の形と、合成画像を付けたリクエストが通ることを確認済み（2026-10-24、アプリ外の Python スクリプトから）。**アプリからの実画像での診断は未確認**
   - 接続テストは合成した 8×8 の白画像と仮の選択肢だけを送る
   - 未実装（Phase 5）: 同意ダイアログ、設定画面の System One 項目（コマンドは `set_external_consent` / `ai_key_status` / `test_systemone` を用意済み）
 - Phase 2・5 の進捗（2026-10-03）:
