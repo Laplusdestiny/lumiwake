@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>案D AI 候補の設定</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#6cb2ff}a:hover{color:#a6d0ff}
+.kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border:1px solid #3a404b;border-bottom-width:2px;border-radius:5px;background:#262a32;color:#e6e8eb;font-family:'JetBrains Mono',monospace;font-size:12px}
+.path{font-family:'JetBrains Mono',monospace;font-size:11px;color:#9aa1ad;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field{height:34px;box-sizing:border-box;padding:0 10px;border:1px solid #3a404b;border-radius:6px;background:#121418;color:#e6e8eb;font-family:'JetBrains Mono',monospace;font-size:13px}
+.lbl{font-size:12px;color:#c9cdd4}
+</style>
+</head>
+<body>
+<div style="width: 1280px; height: 880px; box-sizing: border-box; display: grid; grid-template-columns: 220px minmax(0, 1fr); background: #121418; color: #e6e8eb; font-family: 'IBM Plex Sans JP', 'Noto Sans JP', sans-serif; font-size: 14px">
+
+  <nav style="border-right: 1px solid #2c313a; background: #1a1d23; padding: 20px 12px; display: flex; flex-direction: column; gap: 2px">
+    <div style="padding: 0 10px 14px; font-weight: 700; font-size: 16px">設定</div>
+    <a href="#" style="padding: 9px 10px; border-radius: 6px; color: #c9cdd4; text-decoration: none">一般</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 6px; color: #c9cdd4; text-decoration: none">振り分け先とキー</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 6px; background: #262a32; color: #e6e8eb; font-weight: 600; text-decoration: none">AI 候補</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 6px; color: #c9cdd4; text-decoration: none">削除</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 6px; color: #c9cdd4; text-decoration: none">アップデート</a>
+  </nav>
+
+  <div style="padding: 22px 32px; display: flex; flex-direction: column; gap: 16px; overflow: hidden">
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <div style="font-size: 13px; font-weight: 600; color: #c9cdd4">推論バックエンド</div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+        <label style="display: flex; gap: 10px; padding: 12px 14px; border-radius: 8px; background: #1a1d23; outline: 2px solid #6cb2ff">
+          <input type="radio" name="be" checked style="accent-color: #6cb2ff; margin-top: 3px">
+          <span><span style="display: block; font-weight: 600">ローカル（既定）</span><span style="display: block; font-size: 12px; color: #9aa1ad">CLIP を端末で実行。画像は送信しません</span></span>
+        </label>
+        <label style="display: flex; gap: 10px; padding: 12px 14px; border-radius: 8px; background: #1a1d23; outline: 1px solid #2c313a">
+          <input type="radio" name="be" style="margin-top: 3px">
+          <span><span style="display: block; font-weight: 600">System One 互換 API</span><span style="display: block; font-size: 12px; color: #f0c27a">画像が外部へ送信されます</span></span>
+        </label>
+        <label style="display: flex; gap: 10px; padding: 12px 14px; border-radius: 8px; background: #1a1d23; outline: 1px solid #2c313a">
+          <input type="radio" name="be" style="margin-top: 3px">
+          <span><span style="display: block; font-weight: 600">オフ</span><span style="display: block; font-size: 12px; color: #9aa1ad">AI 候補を表示しません</span></span>
+        </label>
+      </div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+      <div style="padding: 14px 16px; border-radius: 8px; background: #1a1d23; display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 13px; font-weight: 600">ローカル</div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="m">モデル</label><input id="m" class="field" value="clip-vit-b32"></div>
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="st">方式</label><input id="st" class="field" value="hybrid"></div>
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="hi">高しきい値（強調）</label><input id="hi" class="field" value="0.80"></div>
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="lo">低しきい値（非表示）</label><input id="lo" class="field" value="0.40"></div>
+        </div>
+      </div>
+      <div style="padding: 14px 16px; border-radius: 8px; background: #1a1d23; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <div style="font-size: 13px; font-weight: 600">System One 互換 API</div>
+          <div style="flex-grow: 1"></div>
+          <span style="font-size: 12px; color: #9aa1ad">外部送信への同意：未</span>
+          <button style="height: 30px; padding: 0 10px; border: 1px solid #3a404b; border-radius: 6px; background: transparent; color: #e6e8eb; font: inherit; font-size: 12px">接続テスト</button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="ep">エンドポイント</label><input id="ep" class="field" value="https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/clef-flash"></div>
+        <div style="display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px">
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="key">API キー（環境変数）</label><input id="key" class="field" value="LUMIWAKE_SYSTEMONE_KEY"></div>
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="kb">画像上限 KB</label><input id="kb" class="field" value="190"></div>
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="hi2">高しきい値</label><input id="hi2" class="field" value="0.85"></div>
+          <div style="display: flex; flex-direction: column; gap: 5px"><label class="lbl" for="lo2">低しきい値</label><input id="lo2" class="field" value="0.50"></div>
+        </div>
+        <div style="font-size: 12px; color: #9aa1ad">キーは設定ファイルに保存せず、環境変数または OS のキーチェーンから読みます · 検出：<span style="color: #5fcf8a">あり</span></div>
+      </div>
+    </section>
+
+    <section style="display: flex; align-items: center; gap: 24px; padding: 12px 16px; border-radius: 8px; background: #1a1d23">
+      <div style="display: flex; align-items: center; gap: 8px"><label class="lbl" for="tk">候補数</label><input id="tk" class="field" value="3" style="width: 56px"></div>
+      <div style="display: flex; align-items: center; gap: 8px"><label class="lbl" for="pf">先読み枚数</label><input id="pf" class="field" value="5" style="width: 56px"></div>
+      <div style="font-size: 12px; color: #9aa1ad">共通設定 · 出力は「振り分け先と確率の上位 K 件」に統一</div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px; min-height: 0">
+      <div style="display: flex; align-items: baseline; gap: 12px">
+        <div style="font-size: 13px; font-weight: 600; color: #c9cdd4">振り分け先の説明文</div>
+        <div style="font-size: 12px; color: #9aa1ad">ラベル名より「何を入れるフォルダか」を書くと精度が上がります</div>
+      </div>
+      <div style="border-radius: 8px; overflow: hidden; outline: 1px solid #2c313a">
+        <div style="display: grid; grid-template-columns: 120px 260px minmax(0, 1fr) 90px 90px; gap: 12px; padding: 9px 14px; background: #1a1d23; font-size: 12px; color: #9aa1ad">
+          <span>振り分け先</span><span>パス</span><span>説明文（description）</span><span>的中率</span><span>外部送信</span>
+        </div>
+        
+          <div style="display: grid; grid-template-columns: 120px 260px minmax(0, 1fr) 90px 90px; gap: 12px; align-items: center; padding: 8px 14px; border-top: 1px solid #2c313a">
+            <span style="font-weight: 600">猫</span>
+            <span class="path">D:\Photos\仕分け\猫</span>
+            <input class="field" aria-label="説明文" value="自宅の猫（三毛）が写っている写真" style="font-family: 'IBM Plex Sans JP', sans-serif">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">91%</span>
+            <span style="font-size: 12px; color: #c9cdd4">許可</span>
+          </div>
+        
+          <div style="display: grid; grid-template-columns: 120px 260px minmax(0, 1fr) 90px 90px; gap: 12px; align-items: center; padding: 8px 14px; border-top: 1px solid #2c313a">
+            <span style="font-weight: 600">猫</span>
+            <span class="path">\\nas\share\写真\ペット\猫</span>
+            <input class="field" aria-label="説明文" value="実家の猫（黒猫）が写っている写真" style="font-family: 'IBM Plex Sans JP', sans-serif">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">78%</span>
+            <span style="font-size: 12px; color: #c9cdd4">許可</span>
+          </div>
+        
+          <div style="display: grid; grid-template-columns: 120px 260px minmax(0, 1fr) 90px 90px; gap: 12px; align-items: center; padding: 8px 14px; border-top: 1px solid #2c313a">
+            <span style="font-weight: 600">料理</span>
+            <span class="path">D:\Photos\仕分け\料理</span>
+            <input class="field" aria-label="説明文" value="自炊・外食の料理を上から撮った写真" style="font-family: 'IBM Plex Sans JP', sans-serif">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">84%</span>
+            <span style="font-size: 12px; color: #c9cdd4">許可</span>
+          </div>
+        
+          <div style="display: grid; grid-template-columns: 120px 260px minmax(0, 1fr) 90px 90px; gap: 12px; align-items: center; padding: 8px 14px; border-top: 1px solid #2c313a">
+            <span style="font-weight: 600">スクショ</span>
+            <span class="path">D:\Photos\仕分け\スクショ</span>
+            <input class="field" aria-label="説明文" value="PC・スマホの画面キャプチャ" style="font-family: 'IBM Plex Sans JP', sans-serif">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">97%</span>
+            <span style="font-size: 12px; color: #c9cdd4">除外</span>
+          </div>
+        
+      </div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 8px; background: #1a1d23">
+        <span class="lbl">再診断キー</span>
+        <span><span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">D</span></span>
+        <div style="flex-grow: 1"></div>
+        <button style="height: 34px; padding: 0 12px; border: 1px solid #3a404b; border-radius: 6px; background: transparent; color: #e6e8eb; font: inherit; font-size: 13px">変更</button>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 8px; background: #1a1d23">
+        <span class="lbl">診断キャッシュ</span>
+        <span style="font-size: 13px">1,284 件 · 最終診断 2026-10-02</span>
+        <div style="flex-grow: 1"></div>
+        <button style="height: 34px; padding: 0 12px; border: 1px solid #3a404b; border-radius: 6px; background: transparent; color: #e6e8eb; font: inherit; font-size: 13px">履歴を見る</button>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

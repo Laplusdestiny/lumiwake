@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   reloadConfig: vi.fn(),
   listSubfolders: vi.fn(),
   openConfigFile: vi.fn(),
+  getSuggestions: vi.fn(),
 }));
 const dialog = vi.hoisted(() => ({ ask: vi.fn(), open: vi.fn() }));
 const toast = vi.hoisted(() => vi.fn());
@@ -15,7 +16,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => dialog);
 vi.mock("../toast", () => ({ toast }));
 
 import type { ConfigPayload } from "../api";
-import { makeConfig, makeSession } from "../test/fixtures";
+import { makeConfig, makeSession, makeSuggestions } from "../test/fixtures";
 
 type Settings = typeof import("./settings");
 type Store = typeof import("../store")["store"];
@@ -58,6 +59,7 @@ beforeEach(async () => {
   document.body.innerHTML = `<div id="app"></div>`;
   root = document.querySelector("#app")!;
   api.validateConfig.mockResolvedValue([]);
+  api.getSuggestions.mockResolvedValue(makeSuggestions());
   await open();
 });
 
@@ -65,7 +67,7 @@ describe("表示", () => {
   it("キー割り当て: 振り分け先と操作キーを並べ、変更がなければ保存できない", () => {
     expect(store.screen).toBe("settings");
     expect(keys()).toEqual(["1", "2"]);
-    expect(root.querySelectorAll(".action-row")).toHaveLength(7);
+    expect(root.querySelectorAll(".action-row")).toHaveLength(8);
     expect(root.querySelector<HTMLInputElement>('[data-field="target-name"]')!.placeholder).toBe("風景");
     expect(saveButton().disabled).toBe(true);
     expect(root.querySelector('[data-slot="issues"]')!.textContent).toBe("問題はありません");

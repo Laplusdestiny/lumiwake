@@ -119,7 +119,7 @@ mod tests {
         for p in &images {
             write_dummy(p, 300, 200);
         }
-        let state = AppState::new(dir.join("config.toml"));
+        let state = AppState::new(dir.join("config.toml"), dir.join("data"));
         let session = Session::new(Arc::new(fileops::RealFs), images, None);
         *state.session() =
             Some(SessionState { session, generation: 1, source: dir.to_path_buf(), unsupported: Vec::new() });
