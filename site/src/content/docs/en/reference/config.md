@@ -5,6 +5,8 @@ description: Reference for config.toml
 
 Settings can be edited both in the GUI and in a TOML file. Saving in the GUI writes the TOML file (comments in the file are not preserved). After editing the file by hand, use **設定ファイル → ファイルから再読み込み** (reload from file).
 
+<img class="shot" src="/lumiwake/settings-general.webp" width="1600" height="1038" loading="lazy" alt="The General settings: delete folder, what to do on quit, view mode, showing paths in the destination list, accent color, including subfolders, image order, and the number of images to prefetch" />
+
 ## Location
 
 | OS | Path |

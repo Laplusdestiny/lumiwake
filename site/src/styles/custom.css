@@ -9,3 +9,28 @@
   --sl-color-accent: #a86d12;
   --sl-color-accent-high: #4a3108;
 }
+
+/* スクリーンショット・デモ動画（2 倍サイズで作ってあるので PC では 800px 前後に収める） */
+.sl-markdown-content :is(.shot, .demo-video) {
+  display: block;
+  max-width: min(100%, 800px);
+  height: auto;
+  margin-inline: auto;
+  border-radius: 0.5rem;
+  border: 1px solid var(--sl-color-gray-5);
+}
+/* 開始画面は解像度が小さいので引き伸ばさない */
+.sl-markdown-content .shot--narrow {
+  max-width: min(100%, 540px);
+}
+/* 表示モードの比較は 2 枚を横に並べ、狭い画面では縦に積む */
+.sl-markdown-content .shot-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+  max-width: 1000px;
+  margin-inline: auto;
+}
+.sl-markdown-content .shot-pair > .shot {
+  margin: 0;
+}
