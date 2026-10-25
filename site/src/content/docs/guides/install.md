@@ -7,7 +7,7 @@ description: Lumiwake のダウンロードとインストール
 
 ## Windows
 
-`Lumiwake_x.y.z_x64_ja-JP.msi`（または `_en-US.msi`）を実行してインストールします。
+`Lumiwake_x.y.z_x64_ja-JP.msi` を実行してインストールします。
 
 ## Linux
 

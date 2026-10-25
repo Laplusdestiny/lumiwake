@@ -36,7 +36,12 @@
     ],
     "category": "Photography",
     "shortDescription": "キーボードで画像をすばやく振り分ける",
-    "license": "MIT"
+    "license": "MIT",
+    "windows": {
+      "wix": {
+        "language": "ja-JP"
+      }
+    }
   },
   "plugins": {
     "updater": {
