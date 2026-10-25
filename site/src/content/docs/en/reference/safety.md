@@ -14,6 +14,8 @@ Deleting on an SMB share (e.g. a NAS) bypasses the OS recycle bin and is permane
 
 Files are permanently deleted **only when you quit**, after a confirmation by default (you can switch to deleting without asking). Only files marked during the current run are deleted; files that were already in the delete folder are left alone.
 
+<img class="shot" src="/lumiwake/exit-delete-confirm.webp" width="1600" height="1038" loading="lazy" alt="The confirmation dialog on quit: “1 file is marked for deletion”, with the file name and path, an Open location button, and Cancel, Quit without deleting, and Delete permanently and quit buttons" />
+
 ## Undo
 
 Moves, deletions, skips and name-clash decisions can all be undone, any number of steps. History lives in memory only and is not kept across restarts. If the app crashes, the deletion marks are lost but the files remain.

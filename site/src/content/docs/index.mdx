@@ -16,6 +16,23 @@ hero:
 
 import { Card, CardGrid } from "@astrojs/starlight/components";
 
+<video
+  class="demo-video"
+  src="/lumiwake/lumiwake-demo.mp4"
+  poster="/lumiwake/sort-sidebar.webp"
+  autoplay
+  loop
+  muted
+  playsinline
+  width="960"
+  height="624"
+  aria-label="デモ動画: 開始画面で仕分け元フォルダを読み込み、キーを押して画像を振り分けていく様子"
+></video>
+
+## 主な機能
+
+<img class="shot" src="/lumiwake/sort-sidebar.webp" width="1600" height="1038" loading="lazy" alt="仕分け画面（サイドバー型）。中央に画像のプレビュー、右にキーとフルパス付きの振り分け先リスト、下にショートカットの一覧が並ぶ" />
+
 <CardGrid stagger>
   <Card title="キー 1 つで振り分け" icon="rocket">
     1〜9 などのキーにフォルダを割り当て、押すだけで移動。Ctrl / Shift / Alt との組み合わせで多数のフォルダを使えます。
