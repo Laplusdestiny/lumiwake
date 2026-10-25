@@ -40,6 +40,25 @@ pub enum Accent {
     Green,
 }
 
+/// 振り分ける画像の並び順
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    /// ファイル名（自然順）の昇順（既定）
+    #[default]
+    NameAsc,
+    NameDesc,
+    /// 更新日時の古い順
+    ModifiedAsc,
+    ModifiedDesc,
+    /// EXIF の撮影日時の古い順。撮影日時のない画像は後ろに更新日時順で並べる
+    TakenAsc,
+    TakenDesc,
+    /// ファイルサイズの小さい順
+    SizeAsc,
+    SizeDesc,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct General {
@@ -51,6 +70,8 @@ pub struct General {
     pub recent_sources: Vec<PathBuf>,
     /// サブフォルダも読み込むか（読み込み時に毎回変更できる）
     pub include_subdirs: bool,
+    /// 振り分ける画像の並び順（仕分け中に変えると未処理の画像を並べ直す）
+    pub sort_order: SortOrder,
     /// 削除フォルダ。未指定なら削除キーでファイルを動かさず、削除予定として記録する
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delete_folder: Option<PathBuf>,
@@ -71,6 +92,7 @@ impl Default for General {
             source_dir: None,
             recent_sources: Vec::new(),
             include_subdirs: false,
+            sort_order: SortOrder::NameAsc,
             delete_folder: None,
             on_exit: OnExit::Confirm,
             view_mode: ViewMode::Sidebar,
@@ -341,6 +363,8 @@ const HEADER: &str = "\
 # 手で編集した場合は、設定画面の「ファイルから再読み込み」かアプリの再起動で反映されます。
 #
 # キーの書き方: \"1\"、\"A\"、\"Ctrl+1\"、\"Shift+Alt+F2\"、\"Space\"、\"Delete\"、\"Left\"、\"Num1\"（テンキー）など
+# sort_order: \"name_asc\" / \"name_desc\"（ファイル名）、\"modified_asc\" / \"modified_desc\"（更新日時）、
+#   \"taken_asc\" / \"taken_desc\"（撮影日時）、\"size_asc\" / \"size_desc\"（ファイルサイズ）。asc は昇順、desc は降順
 # on_exit: \"confirm\"（終了時に完全削除するか確認）/ \"delete\"（確認せずに完全削除）
 # delete_folder を書かない場合、削除キーではファイルを動かさず「削除予定」として記録します。
 # recent_sources: 最近使った仕分け元フォルダ（新しい順、10 件まで）。開始画面で選べます。
@@ -478,6 +502,7 @@ mod tests {
         let c = parse(text, Path::new("x")).unwrap();
         assert_eq!(c.general.delete_folder, None, "空文字は未指定");
         assert_eq!(c.general.on_exit, OnExit::Delete);
+        assert_eq!(c.general.sort_order, SortOrder::NameAsc, "書いていなければファイル名順");
         assert_eq!(c.keys.skip, "Space", "書いていない項目は既定値");
         assert_eq!(c.keys.undo, "Ctrl+Z");
         assert_eq!(c.targets[0].key, "Ctrl+Shift+1");
@@ -553,6 +578,14 @@ mod tests {
         let c = parse(&text, Path::new("x")).unwrap();
         assert_eq!(c.general.recent_sources.len(), RECENT_SOURCES_LIMIT);
         assert_eq!(c.general.recent_sources[..2], [PathBuf::from("/p/0"), PathBuf::from("/p/1")], "空と重複は除く");
+    }
+
+    #[test]
+    fn parses_sort_order() {
+        let c = parse("[general]\nsort_order = \"taken_desc\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.general.sort_order, SortOrder::TakenDesc);
+        assert!(to_toml(&c).contains("sort_order = \"taken_desc\""));
+        assert!(matches!(parse("[general]\nsort_order = \"random\"", Path::new("x")), Err(ConfigError::Parse { .. })));
     }
 
     #[test]

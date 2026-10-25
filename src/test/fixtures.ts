@@ -7,6 +7,7 @@ export function makeConfig(overrides: Partial<ConfigPayload["config"]["general"]
       version: 1,
       general: {
         include_subdirs: false,
+        sort_order: "name_asc",
         on_exit: "confirm",
         view_mode: "sidebar",
         accent: "amber",

@@ -73,13 +73,23 @@ pub fn reload_config(state: State<'_, AppState>) -> CmdResult<ConfigPayload> {
 
 fn apply_config(state: &AppState, config: Config, load_error: Option<String>) {
     let trash = config.general.delete_folder.clone();
-    {
+    let order = config.general.sort_order;
+    let (order_changed, prefetch) = {
         let mut c = state.config();
+        let changed = c.config.general.sort_order != order;
         c.config = config;
         c.load_error = load_error;
-    }
+        (changed, c.config.general.prefetch)
+    };
     if let Some(s) = state.session().as_mut() {
         s.session.set_trash_dir(trash);
+        if order_changed {
+            // 仕分け中に並び順を変えたら、まだ振り分けていない画像をすぐ並べ直す
+            s.session.reorder_open(|paths| scanner::sort_paths(paths, order));
+            // 画像の番号が変わるので、画面が持っている古い番号の URL を無効にする
+            s.generation = state.next_generation();
+            state.schedule_prefetch(s, prefetch);
+        }
     }
 }
 
@@ -300,15 +310,15 @@ fn with_session<T>(
 #[tauri::command]
 pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs: bool) -> CmdResult<SessionView> {
     let source = PathBuf::from(source);
-    let (exclude, trash) = {
+    let (exclude, trash, order) = {
         let c = state.config();
         let mut exclude: Vec<PathBuf> = c.config.targets.iter().map(|t| t.path.clone()).collect();
         exclude.extend(c.config.general.delete_folder.clone());
-        (exclude, c.config.general.delete_folder.clone())
+        (exclude, c.config.general.delete_folder.clone(), c.config.general.sort_order)
     };
     let registry = state.registry.clone();
     let result =
-        scanner::scan(&ScanOptions { root: source.clone(), include_subdirs, exclude }, |f| registry.supports(f))
+        scanner::scan(&ScanOptions { root: source.clone(), include_subdirs, exclude, order }, |f| registry.supports(f))
             .map_err(|e| e.to_string())?;
 
     // 前回の仕分け元として覚えておく（設定ファイルに誤りがあって保存できなくても仕分けは続ける）

@@ -162,14 +162,19 @@ pub fn encode(img: &DynamicImage) -> Result<Encoded, String> {
 
 /// EXIF の撮影日時（`2026-08-14 10:22` 形式）。読めなければ `None`
 pub fn taken_at(path: &Path) -> Option<String> {
+    let dt = taken_datetime(path)?;
+    Some(format!("{:04}-{:02}-{:02} {:02}:{:02}", dt.year, dt.month, dt.day, dt.hour, dt.minute))
+}
+
+/// EXIF の撮影日時（なければ更新日時のタグ）。読めなければ `None`
+pub fn taken_datetime(path: &Path) -> Option<exif::DateTime> {
     let file = std::fs::File::open(path).ok()?;
     let exif = exif::Reader::new().read_from_container(&mut std::io::BufReader::new(file)).ok()?;
     let field = exif
         .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
         .or_else(|| exif.get_field(exif::Tag::DateTime, exif::In::PRIMARY))?;
     let exif::Value::Ascii(ref v) = field.value else { return None };
-    let dt = exif::DateTime::from_ascii(v.first()?).ok()?;
-    Some(format!("{:04}-{:02}-{:02} {:02}:{:02}", dt.year, dt.month, dt.day, dt.hour, dt.minute))
+    exif::DateTime::from_ascii(v.first()?).ok()
 }
 
 #[cfg(test)]

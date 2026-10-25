@@ -2,7 +2,7 @@
 
 use super::fs::{safe_move, unique_path, Fs};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -338,6 +338,34 @@ impl Session {
         true
     }
 
+    /// 未処理（保留を含む）の画像を `sort` の順に並べ直す（並び順の設定を変えたとき）。
+    /// 処理済みの画像は前に詰め、未処理の先頭を現在の画像にする。画像の番号が変わるので、
+    /// 呼び出し側は画面に渡した番号を無効にすること。同名ファイルの確認待ちは取り消す
+    pub fn reorder_open(&mut self, sort: impl FnOnce(&mut Vec<PathBuf>)) {
+        let (closed, open): (Vec<usize>, Vec<usize>) =
+            (0..self.items.len()).partition(|&i| !self.items[i].status.is_open());
+        // 未処理の画像は元の場所から動いていないので、パスで並べ替えられる
+        let mut paths: Vec<PathBuf> = open.iter().map(|&i| self.items[i].path.clone()).collect();
+        sort(&mut paths);
+        let mut by_path: HashMap<&Path, usize> = open.iter().map(|&i| (self.items[i].path.as_path(), i)).collect();
+        let mut sorted: Vec<usize> = paths.iter().filter_map(|p| by_path.remove(p.as_path())).collect();
+        // `sort` が取りこぼしたものは元の並びのまま後ろへ
+        sorted.extend(open.iter().filter(|&&i| by_path.contains_key(self.items[i].path.as_path())));
+
+        let order: Vec<usize> = closed.iter().chain(&sorted).copied().collect();
+        let mut new_index = vec![0; order.len()];
+        for (new, &old) in order.iter().enumerate() {
+            new_index[old] = new;
+        }
+        let mut old_items: Vec<Option<Item>> = std::mem::take(&mut self.items).into_iter().map(Some).collect();
+        self.items = order.iter().map(|&old| old_items[old].take().expect("並べ替えの番号は重複しない")).collect();
+        for entry in &mut self.history {
+            entry.item = new_index[entry.item];
+        }
+        self.conflict = None;
+        self.cursor = closed.len();
+    }
+
     /// 現在の画像を除いた保留中の画像のうち、次に見るもの（現在より後ろを優先し、なければ先頭から）
     pub fn next_skipped(&self) -> Option<usize> {
         let skipped = |i: &usize| *i != self.cursor && self.items[*i].status == Status::Skipped;
@@ -550,6 +578,49 @@ mod tests {
 
     fn read(p: &Path) -> String {
         fs::read_to_string(p).unwrap()
+    }
+
+    #[test]
+    fn reorder_sorts_open_images_and_keeps_undo_working() {
+        let (e, imgs) = env(5);
+        let mut s = session(imgs.clone(), None);
+        s.apply(move_to(&e.a)).unwrap(); // img1
+        s.apply(Action::Skip).unwrap(); // img2
+        s.apply(Action::Delete).unwrap(); // img3（削除予定）
+        assert_eq!(s.current(), Some(3));
+
+        s.reorder_open(|paths| paths.reverse());
+        let names: Vec<_> = s.items().iter().map(|i| file_name(&i.path)).collect();
+        assert_eq!(names, ["img1.jpg", "img3.jpg", "img5.jpg", "img4.jpg", "img2.jpg"], "処理済みは前に詰める");
+        assert_eq!(s.current(), Some(2), "並べ直した先頭から見る");
+        assert_eq!(
+            s.recent_history(10).iter().map(|h| h.item).collect::<Vec<_>>(),
+            [1, 4, 0],
+            "履歴も新しい番号を指す"
+        );
+        assert_eq!(s.next_skipped(), Some(4));
+
+        assert!(s.undo().unwrap().contains("img3.jpg"));
+        assert_eq!(s.current(), Some(1));
+        assert_eq!(s.items()[1].status, Status::Pending);
+        assert!(s.undo().unwrap().contains("img2.jpg"));
+        assert_eq!(s.items()[4].status, Status::Pending);
+        assert!(s.undo().unwrap().contains("img1.jpg"));
+        assert_eq!(s.current(), Some(0));
+        for (i, p) in imgs.iter().enumerate() {
+            assert_eq!(read(p), format!("image {}", i + 1));
+        }
+    }
+
+    #[test]
+    fn reorder_after_everything_is_done_stays_done() {
+        let (e, imgs) = env(2);
+        let mut s = session(imgs, None);
+        s.apply(move_to(&e.a)).unwrap();
+        s.apply(move_to(&e.b)).unwrap();
+        s.reorder_open(|paths| paths.reverse());
+        assert_eq!(s.current(), None);
+        assert_eq!(s.upcoming(4), Vec::<usize>::new());
     }
 
     #[test]

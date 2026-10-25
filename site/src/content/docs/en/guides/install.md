@@ -7,7 +7,7 @@ Download the file for your OS from [GitHub Releases](https://github.com/laplusde
 
 ## Windows
 
-Run `Lumiwake_x.y.z_x64_ja-JP.msi` (or `_en-US.msi`).
+Run `Lumiwake_x.y.z_x64_ja-JP.msi` (the installer is in Japanese).
 
 ## Linux
 
