@@ -143,7 +143,8 @@ document.addEventListener("click", async (e) => {
 });
 
 document.addEventListener("input", (e) => {
-  if (store.screen === "settings" && e.target instanceof HTMLInputElement) handleSettingsInput(e.target);
+  if (store.screen === "settings" && (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement))
+    handleSettingsInput(e.target);
 });
 
 // 右クリックメニュー（再読み込みなど）は出さない

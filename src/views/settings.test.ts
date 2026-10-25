@@ -7,6 +7,8 @@ const api = vi.hoisted(() => ({
   reloadConfig: vi.fn(),
   listSubfolders: vi.fn(),
   openConfigFile: vi.fn(),
+  getSession: vi.fn(),
+  imageInfo: vi.fn(),
 }));
 const dialog = vi.hoisted(() => ({ ask: vi.fn(), open: vi.fn() }));
 const toast = vi.hoisted(() => vi.fn());
@@ -216,6 +218,34 @@ describe("一般", () => {
     expect(saved.targets[0].name).toBe("海");
     input("prefetch", "abc");
     input("unknown", "x");
+  });
+});
+
+describe("並び順", () => {
+  it("読み込みの欄で選び、保存すると仕分け中の画像の並びも取り直す", async () => {
+    await click("section", { section: "general" });
+    const select = root.querySelector<HTMLSelectElement>('select[data-field="sort_order"]')!;
+    expect(select.value).toBe("name_asc");
+    expect(select.options).toHaveLength(8);
+
+    store.session = makeSession();
+    const reordered = makeSession({ generation: 2 });
+    api.getSession.mockResolvedValue(reordered);
+    api.imageInfo.mockReturnValue(new Promise(() => {}));
+    api.saveConfig.mockImplementation(async (c) => ({ ...makeConfig(), config: c }));
+    select.value = "taken_desc";
+    s.handleSettingsInput(select);
+    await click("save-config");
+    expect(api.saveConfig.mock.calls[0][0].general.sort_order).toBe("taken_desc");
+    expect(api.getSession).toHaveBeenCalled();
+    expect(store.session).toBe(reordered);
+  });
+
+  it("仕分けていなければ画面の状態は取り直さない", async () => {
+    api.saveConfig.mockImplementation(async (c) => ({ ...makeConfig(), config: c }));
+    input("prefetch", "2");
+    await click("save-config");
+    expect(api.getSession).not.toHaveBeenCalled();
   });
 });
 

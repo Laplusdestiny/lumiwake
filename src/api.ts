@@ -4,6 +4,15 @@ import { invoke } from "@tauri-apps/api/core";
 export type OnExit = "confirm" | "delete";
 export type ViewMode = "sidebar" | "focus";
 export type Accent = "amber" | "blue" | "green";
+export type SortOrder =
+  | "name_asc"
+  | "name_desc"
+  | "modified_asc"
+  | "modified_desc"
+  | "taken_asc"
+  | "taken_desc"
+  | "size_asc"
+  | "size_desc";
 
 export interface Target {
   key: string;
@@ -20,6 +29,7 @@ export interface Config {
     /** 最近使った仕分け元フォルダ（新しい順） */
     recent_sources?: string[];
     include_subdirs: boolean;
+    sort_order: SortOrder;
     delete_folder?: string;
     on_exit: OnExit;
     view_mode: ViewMode;

@@ -15,7 +15,7 @@ Optionally set a delete folder under **一般** (General). See [Safety](/lumiwak
 
 ## 2. Load a source folder
 
-Choose the folder containing the images to sort and press **読み込んで開始** (<kbd>Enter</kbd>). You can include subfolders. Destination folders and the delete folder are excluded automatically.
+Choose the folder containing the images to sort and press **読み込んで開始** (<kbd>Enter</kbd>). You can include subfolders. Destination folders and the delete folder are excluded automatically. Images are shown in file-name order; to use modified time, capture time, or file size instead, change **一般 → 読み込み → 並び順** (General → Loading → Order).
 
 Recently used folders (up to 10) are listed on the start screen; pick one by clicking or with <kbd>↑</kbd> <kbd>↓</kbd>. Remove an entry from the history with × (the folder itself is not touched).
 

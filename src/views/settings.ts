@@ -1,6 +1,7 @@
 // 設定画面。編集中の内容は下書きとして持ち、「保存」で TOML に書き戻す。
 import { ask, open } from "@tauri-apps/plugin-dialog";
-import { api, errorText, type Config, type Issue } from "../api";
+import { setSession } from "../actions";
+import { api, errorText, type Config, type Issue, type SortOrder } from "../api";
 import { displayCombo } from "../keys";
 import { notify, store } from "../store";
 import { toast } from "../toast";
@@ -151,6 +152,8 @@ export async function save(): Promise<void> {
   if (!draft) return;
   try {
     store.config = await api.saveConfig(draft);
+    // 並び順を変えると仕分け中の画像が並べ直されるので、仕分け画面の状態も取り直す
+    if (store.session) setSession(await api.getSession());
     draft = structuredClone(store.config.config);
     issues = store.config.issues;
     dirty = false;
@@ -220,6 +223,17 @@ function radio(name: string, value: string, current: string, label: string): str
   return `<label class="radio"><input type="radio" name="${name}" value="${value}" ${value === current ? "checked" : ""} data-field="${name}"> ${label}</label>`;
 }
 
+const SORT_ORDERS: [SortOrder, string][] = [
+  ["name_asc", "ファイル名（昇順）"],
+  ["name_desc", "ファイル名（降順）"],
+  ["modified_asc", "更新日時（古い順）"],
+  ["modified_desc", "更新日時（新しい順）"],
+  ["taken_asc", "撮影日時（古い順）"],
+  ["taken_desc", "撮影日時（新しい順）"],
+  ["size_asc", "ファイルサイズ（小さい順）"],
+  ["size_desc", "ファイルサイズ（大きい順）"],
+];
+
 function generalSection(d: Config): string {
   const g = d.general;
   return `
@@ -259,6 +273,12 @@ function generalSection(d: Config): string {
     <section>
       <h2>読み込み</h2>
       <label class="check"><input type="checkbox" data-field="include_subdirs" ${g.include_subdirs ? "checked" : ""}> サブフォルダの画像も含める（読み込み時にも変更できます）</label>
+      <label class="inline-field">並び順
+        <select class="input" data-field="sort_order">
+          ${SORT_ORDERS.map(([v, label]) => `<option value="${v}" ${g.sort_order === v ? "selected" : ""}>${label}</option>`).join("")}
+        </select>
+      </label>
+      <p class="muted small">撮影日時のない画像は、後ろに更新日時の順で並べます。仕分け中に変えると、まだ振り分けていない画像をすぐ並べ直します。</p>
       <label class="inline-field">先読みする枚数 <input class="input input-num" type="number" min="0" max="16" data-field="prefetch" value="${g.prefetch}"></label>
     </section>
     <section>
@@ -446,9 +466,16 @@ export async function handleSettingsAction(action: string, el: HTMLElement): Pro
 }
 
 /** 入力欄の変更 */
-export function handleSettingsInput(el: HTMLInputElement): void {
+export function handleSettingsInput(el: HTMLInputElement | HTMLSelectElement): void {
   if (!draft) return;
   const g = draft.general;
+  if (el instanceof HTMLSelectElement) {
+    if (el.dataset.field === "sort_order") {
+      g.sort_order = el.value as SortOrder;
+      changed(false);
+    }
+    return;
+  }
   switch (el.dataset.field) {
     case "target-name":
       draft.targets[Number(el.dataset.index)].name = el.value;

@@ -19,6 +19,7 @@ description: config.toml の項目一覧
 source_dir = "/home/me/Pictures/未整理"  # 前回の仕分け元（自動で保存）
 recent_sources = ["/home/me/Pictures/未整理", "/mnt/nas/写真"]  # 最近使った仕分け元（新しい順、10 件まで。自動で保存）
 include_subdirs = false                  # サブフォルダも読み込む
+sort_order = "name_asc"                  # 並び順（下記）
 delete_folder = "/home/me/Pictures/削除候補"  # 省略すると「削除予定として記録」
 on_exit = "confirm"                      # "confirm"（確認する） / "delete"（確認せずに削除）
 view_mode = "sidebar"                    # "sidebar" / "focus"
@@ -41,5 +42,16 @@ key = "1"
 name = "風景"          # 省略するとフォルダ名
 path = "/home/me/Pictures/整理済み/風景"
 ```
+
+### 並び順（`sort_order`）
+
+| 値 | 並び順 |
+| --- | --- |
+| `name_asc` / `name_desc` | ファイル名の昇順（既定）／降順。数字は数値として比べます（`IMG_2` → `IMG_10`） |
+| `modified_asc` / `modified_desc` | 更新日時の古い順／新しい順 |
+| `taken_asc` / `taken_desc` | EXIF の撮影日時の古い順／新しい順。撮影日時のない画像は後ろに更新日時の順で並べます |
+| `size_asc` / `size_desc` | ファイルサイズの小さい順／大きい順 |
+
+値が同じ画像はファイル名順になります。仕分け中に設定画面で変えると、まだ振り分けていない画像（保留を含む）をすぐ並べ直し、その先頭から表示します。
 
 書式に誤りがあると、起動時に既定の設定で立ち上がり、画面にその旨が表示されます（ファイルは上書きされません）。
