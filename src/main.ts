@@ -46,8 +46,8 @@ function render(): void {
       renderSettings(root);
       break;
     case "grid":
-      if (store.session && store.grid) renderGrid(root);
-      else renderStart(root);
+      // 一覧を出せなければ（セッションや一覧の写しがない）仕分け画面へ戻す
+      renderGrid(root);
       break;
   }
   renderOverlay();

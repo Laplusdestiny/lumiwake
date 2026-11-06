@@ -142,6 +142,17 @@ describe("開く・表示", () => {
     expect(store.grid).toBeNull();
   });
 
+  it("一覧の写しがないまま一覧の画面を描こうとしたら仕分け画面に戻る", () => {
+    store.screen = "grid";
+    g.renderGrid(root);
+    expect(store.screen).toBe("sort");
+  });
+
+  it("振り分け先の名前が分からない移動済みの画像は矢印だけ出す", async () => {
+    await open(makeGridList({ items: [{ index: 0, name: "a.jpg", state: "moved", label: null }] }));
+    expect(tileText(0)).toBe("a.jpg →");
+  });
+
   it("サムネイルを読めなければアイコンに置き換える", async () => {
     await open();
     tile(4)!.querySelector("img")!.dispatchEvent(new Event("error"));
@@ -195,6 +206,12 @@ describe("キー操作", () => {
     expect(actions.jumpTo).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith("この画像はすでに振り分け済みです（取り消しで戻せます）");
     expect(store.screen).toBe("grid");
+  });
+
+  it("一覧を開いていなければキーを扱わない", () => {
+    expect(g.handleGridKey("Escape")).toBe(false);
+    expect(g.handleGridKey("Right")).toBe(false);
+    expect(store.screen).toBe("sort");
   });
 
   it("Esc と toggle_grid のキーで閉じ、振り分けキーは受け付けない", async () => {
@@ -310,6 +327,33 @@ describe("サムネイルの大きさ", () => {
     g.handleGridInput(sizeInput());
     expect(tileSize()).toBe("200px");
     expect(localStorage.getItem("lumiwake.gridTile")).toBe("200");
+  });
+
+  it("localStorage が使えなくても既定の大きさで表示し、変更もできる", async () => {
+    const denied = () => {
+      throw new Error("denied");
+    };
+    vi.stubGlobal("localStorage", { getItem: vi.fn(denied), setItem: vi.fn(denied), clear: () => {} });
+    try {
+      await load();
+      await open();
+      expect(localStorage.getItem).toHaveBeenCalled();
+      expect(tileSize()).toBe("160px");
+      expect(g.handleGridKey("Ctrl+Equal")).toBe(true);
+      expect(localStorage.setItem).toHaveBeenCalled();
+      expect(tileSize()).toBe("240px");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("絞り込み欄・スライダー以外の入力欄は扱わない", async () => {
+    await open();
+    const other = document.createElement("input");
+    other.value = "300";
+    g.handleGridInput(other);
+    expect(tileSize()).toBe("160px");
+    expect(shownIndexes()).toHaveLength(6);
   });
 
   it("保存した大きさを次に開いたときに使う", async () => {

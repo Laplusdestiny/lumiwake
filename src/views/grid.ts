@@ -65,8 +65,9 @@ let rootEl: HTMLElement | null = null;
 /** タイルを作ったときの一覧と絞り込み。変わったときだけ作り直す */
 let built: { list: object; filter: string } | null = null;
 
+/** 絞り込み結果。一覧を開いているときだけ呼ぶ */
 function visible(): GridItem[] {
-  const items = store.grid?.items ?? [];
+  const items = store.grid!.items;
   const q = filter.trim().toLowerCase();
   return q ? items.filter((i) => i.name.toLowerCase().includes(q)) : items;
 }
@@ -179,34 +180,24 @@ function buildTiles(root: HTMLElement): void {
   built = { list, filter };
 }
 
-function updateSelection(scroll = true): void {
-  const root = rootEl;
-  if (!root) return;
-  root.querySelectorAll(".grid-tile.is-selected").forEach((el) => {
-    el.classList.remove("is-selected");
-    el.setAttribute("aria-selected", "false");
-  });
-  if (selected == null) return;
-  const el = root.querySelector<HTMLElement>(`.grid-tile[data-index="${selected}"]`);
-  if (!el) return;
-  el.classList.add("is-selected");
-  el.setAttribute("aria-selected", "true");
-  if (scroll) el.scrollIntoView?.({ block: "nearest" });
-}
-
-function applyTile(): void {
-  document.documentElement.style.setProperty("--grid-tile", `${tile}px`);
-  const slider = rootEl?.querySelector<HTMLInputElement>('[data-grid="size"]');
-  if (slider) slider.value = String(tile);
+/** 選択中のタイルに印を付け、見える位置までスクロールする */
+function updateSelection(): void {
+  part("grid-tiles")
+    .querySelectorAll<HTMLElement>(".grid-tile")
+    .forEach((el) => {
+      const on = Number(el.dataset.index) === selected;
+      el.classList.toggle("is-selected", on);
+      el.setAttribute("aria-selected", String(on));
+      if (on) el.scrollIntoView?.({ block: "nearest" });
+    });
 }
 
 export function renderGrid(root: HTMLElement): void {
   const list = store.grid;
   const s = store.session;
-  if (!list || !s || !store.config) return;
   // 設定で並び順を変えたときなど、画像の番号が変わったら古い一覧は使えない。
   // 同名ファイルの確認が始まったら、確認ダイアログを出せるよう仕分け画面へ戻る
-  if (list.generation !== s.generation || s.conflict) return closeGrid();
+  if (!list || !s || list.generation !== s.generation || s.conflict) return closeGrid();
   rootEl = root;
   if (root.dataset.view !== "grid") {
     root.innerHTML = skeleton();
@@ -215,33 +206,36 @@ export function renderGrid(root: HTMLElement): void {
   }
   const input = root.querySelector<HTMLInputElement>('[data-grid="filter"]')!;
   if (input.value !== filter) input.value = filter;
-  applyTile();
+  document.documentElement.style.setProperty("--grid-tile", `${tile}px`);
+  root.querySelector<HTMLInputElement>('[data-grid="size"]')!.value = String(tile);
   if (built?.list !== list || built.filter !== filter) buildTiles(root);
   updateSelection();
 }
 
 // ---- 操作 ----
 
-function focusList(): void {
-  rootEl?.querySelector<HTMLElement>('[data-slot="grid-scroll"]')?.focus();
+/** 一覧の部品。一覧を開くと notify で必ず描画されるので、操作するときには存在する */
+function part(slot: "grid-tiles" | "grid-scroll"): HTMLElement {
+  return rootEl!.querySelector<HTMLElement>(`[data-slot="${slot}"]`)!;
 }
 
+function focusList(): void {
+  part("grid-scroll").focus();
+}
+
+/** 大きさを変えて保存する。描き直すと選択中の画像が見える位置までスクロールする */
 function setTile(size: number): void {
   tile = clampTile(size);
   saveTile(tile);
-  applyTile();
-  // 大きさを変えても選択中の画像が見えているようにする
-  updateSelection();
+  notify();
 }
 
 function columns(): number {
-  const width = rootEl?.querySelector<HTMLElement>('[data-slot="grid-tiles"]')?.clientWidth ?? 0;
-  return gridColumns(width, tile, GRID_GAP);
+  return gridColumns(part("grid-tiles").clientWidth, tile, GRID_GAP);
 }
 
 function pageRows(): number {
-  const height = rootEl?.querySelector<HTMLElement>('[data-slot="grid-scroll"]')?.clientHeight ?? 0;
-  return Math.max(1, Math.floor(height / (tile + LABEL_HEIGHT)));
+  return Math.max(1, Math.floor(part("grid-scroll").clientHeight / (tile + LABEL_HEIGHT)));
 }
 
 function openItem(index: number | null): void {
@@ -279,12 +273,11 @@ function moveSelection(combo: string): boolean {
 
 /** 一覧のキー操作。処理したら true。振り分け・削除・スキップのキーは受け付けない */
 export function handleGridKey(combo: string): boolean {
-  const c = store.config?.config;
-  if (!store.grid || !c) return false;
-  if (combo === "Escape" || combo === c.keys.toggle_grid) return closeGrid(), true;
+  if (!store.grid) return false;
+  if (combo === "Escape" || combo === store.config!.config.keys.toggle_grid) return closeGrid(), true;
   if (combo === "Enter") return openItem(selected), true;
   if (combo === "Ctrl+F") {
-    rootEl?.querySelector<HTMLInputElement>('[data-grid="filter"]')?.focus();
+    rootEl!.querySelector<HTMLInputElement>('[data-grid="filter"]')!.focus();
     return true;
   }
   if (ZOOM_IN.has(combo)) return setTile(stepTile(tile, 1)), true;

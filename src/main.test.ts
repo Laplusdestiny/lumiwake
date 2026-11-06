@@ -210,6 +210,31 @@ describe("一覧", () => {
     press("Escape");
   });
 
+  it("一覧以外の画面では Ctrl+ホイールも入力欄も一覧に渡さない", async () => {
+    (await import("./store")).notify();
+    const e = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+    Object.defineProperty(e, "ctrlKey", { value: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+    const input = document.createElement("input");
+    input.dataset.grid = "size";
+    input.value = "300";
+    root().appendChild(input);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.remove();
+    await openByKey();
+    expect(tileSize()).toBe("160px");
+    press("Escape");
+  });
+
+  it("一覧の写しがなければ一覧の画面にせず仕分け画面を出す", async () => {
+    store.screen = "grid";
+    store.grid = null;
+    (await import("./store")).notify();
+    expect(store.screen).toBe("sort");
+    expect(root().dataset.view).toBe("sort-sidebar");
+  });
+
   it("絞り込み欄に入力すると絞り込み、Enter で一覧に戻って開ける", async () => {
     await openByKey();
     const input = root().querySelector<HTMLInputElement>('[data-grid="filter"]')!;
