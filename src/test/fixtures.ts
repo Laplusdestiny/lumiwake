@@ -24,6 +24,7 @@ export function makeConfig(overrides: Partial<ConfigPayload["config"]["general"]
         next: "Right",
         toggle_view: "Ctrl+Shift+F",
         toggle_paths: "Ctrl+Shift+P",
+        toggle_grid: "Ctrl+Shift+L",
       },
       targets: [
         { key: "1", name: "", path: "/home/u/写真/風景" },

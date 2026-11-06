@@ -67,10 +67,15 @@ describe("表示", () => {
   it("キー割り当て: 振り分け先と操作キーを並べ、変更がなければ保存できない", () => {
     expect(store.screen).toBe("settings");
     expect(keys()).toEqual(["1", "2"]);
-    expect(root.querySelectorAll(".action-row")).toHaveLength(7);
+    expect(root.querySelectorAll(".action-row")).toHaveLength(8);
     expect(root.querySelector<HTMLInputElement>('[data-field="target-name"]')!.placeholder).toBe("風景");
     expect(saveButton().disabled).toBe(true);
     expect(root.querySelector('[data-slot="issues"]')!.textContent).toBe("問題はありません");
+  });
+
+  it("キー割り当てに一覧表示の切り替えが出る", () => {
+    const row = [...root.querySelectorAll(".action-row")].find((r) => r.textContent!.includes("一覧表示の切り替え"));
+    expect(row?.textContent).toContain("Ctrl+Shift+L");
   });
 
   it("各セクションに切り替えられる", async () => {

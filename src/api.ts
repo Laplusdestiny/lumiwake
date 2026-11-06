@@ -46,6 +46,7 @@ export interface Config {
     next: string;
     toggle_view: string;
     toggle_paths: string;
+    toggle_grid: string;
   };
   targets: Target[];
 }
