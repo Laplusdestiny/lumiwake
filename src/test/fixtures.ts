@@ -1,5 +1,5 @@
 // テスト用のデータ。Rust 側（commands.rs）が返す形をまねる
-import type { ConfigPayload, SessionView } from "../api";
+import type { ConfigPayload, GridList, SessionView } from "../api";
 
 export function makeConfig(overrides: Partial<ConfigPayload["config"]["general"]> = {}): ConfigPayload {
   return {
@@ -57,6 +57,23 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     movedCounts: [0, 0],
     unsupported: [],
     conflict: null,
+    ...overrides,
+  };
+}
+
+/** 一覧表示用の 6 枚（番号 2 が現在の画像） */
+export function makeGridList(overrides: Partial<GridList> = {}): GridList {
+  return {
+    generation: 1,
+    current: 2,
+    items: [
+      { index: 0, name: "a.jpg", state: "moved", label: "風景" },
+      { index: 1, name: "b.jpg", state: "deleted", label: "削除予定" },
+      { index: 2, name: "c.jpg", state: "pending", label: null },
+      { index: 3, name: "cat.jpg", state: "skipped", label: null },
+      { index: 4, name: "d.jpg", state: "pending", label: null },
+      { index: 5, name: "Cat2.png", state: "pending", label: null },
+    ],
     ...overrides,
   };
 }
