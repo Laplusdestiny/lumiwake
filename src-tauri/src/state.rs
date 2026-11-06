@@ -1,7 +1,7 @@
 //! アプリ全体の状態。Tauri の State として共有する。
 
 use crate::config::{self, Config};
-use crate::decoder::{make_preview, PrefetchJob, Prefetcher, PreviewCache, Registry};
+use crate::decoder::{make_preview, DecodeLimit, PrefetchJob, Prefetcher, PreviewCache, Registry, ThumbCache};
 use crate::fileops::{Session, Status};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -9,6 +9,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 /// 先読み済みの画像をいくつまで保持するか
 const CACHE_CAPACITY: usize = 24;
+/// 一覧用サムネイルをいくつまで保持するか（1 枚 30〜50 KB で 40 MB 程度）
+const GRID_CACHE_CAPACITY: usize = 1000;
+/// 一覧用サムネイルを同時にいくつまでデコードするか
+const GRID_DECODE_LIMIT: usize = 3;
 
 pub struct ConfigState {
     pub config: Config,
@@ -32,6 +36,9 @@ pub struct AppState {
     retired: Mutex<Vec<Session>>,
     pub registry: Arc<Registry>,
     pub cache: Arc<PreviewCache>,
+    /// 一覧用サムネイルのキャッシュ（先読みのキャッシュとは別）
+    pub grid_cache: Arc<ThumbCache>,
+    pub grid_limit: DecodeLimit,
     prefetcher: Prefetcher,
     /// true のときだけウィンドウを閉じてよい（削除予定の確認を済ませた）
     pub allow_exit: AtomicBool,
@@ -57,6 +64,8 @@ impl AppState {
             retired: Mutex::new(Vec::new()),
             registry,
             cache,
+            grid_cache: Arc::new(ThumbCache::new(GRID_CACHE_CAPACITY)),
+            grid_limit: DecodeLimit::new(GRID_DECODE_LIMIT),
             prefetcher,
             allow_exit: AtomicBool::new(false),
             next_generation: AtomicU64::new(1),

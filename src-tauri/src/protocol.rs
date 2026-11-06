@@ -5,6 +5,7 @@
 //!
 //! - `/preview/{generation}/{index}` 表示用（最大 2560px）
 //! - `/thumb/{generation}/{index}` フィルムストリップ用
+//! - `/grid/{generation}/{index}` 一覧用（最大 480px。先読みとは別のキャッシュ）
 //! - `/conflict/{generation}/{incoming|existing}` 同名ファイルの比較用
 
 use crate::decoder::{self, Encoded};
@@ -38,6 +39,7 @@ pub fn handle<R: Runtime>(ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>
 enum Route {
     Preview(usize),
     Thumb(usize),
+    Grid(usize),
     Conflict { incoming: bool },
 }
 
@@ -52,6 +54,7 @@ fn parse(path: &str) -> Option<(u64, Route)> {
     let req = match kind {
         "preview" => Route::Preview(arg.parse().ok()?),
         "thumb" => Route::Thumb(arg.parse().ok()?),
+        "grid" => Route::Grid(arg.parse().ok()?),
         "conflict" => Route::Conflict {
             incoming: match arg {
                 "incoming" => true,
@@ -70,7 +73,7 @@ fn serve(state: &AppState, path: &str) -> Result<Encoded, String> {
         let guard = state.session();
         let s = guard.as_ref().filter(|s| s.generation == generation).ok_or("古い画面からの要求です")?;
         match req {
-            Route::Preview(i) | Route::Thumb(i) => {
+            Route::Preview(i) | Route::Thumb(i) | Route::Grid(i) => {
                 let item = s.session.items().get(i).ok_or("画像が見つかりません")?;
                 (Some(item.path.clone()), location(&item.path, &item.status).to_path_buf())
             }
@@ -81,6 +84,14 @@ fn serve(state: &AppState, path: &str) -> Result<Encoded, String> {
         }
     };
     match key {
+        // 一覧のサムネイルは専用のキャッシュに入れ、先読みした画像を押し出さない。
+        // 同時に大量に要求されるので、デコードの数を制限する（同じ画像の重複要求はキャッシュ側で待つ）
+        Some(key) if matches!(req, Route::Grid(_)) => {
+            let thumb = state
+                .grid_cache
+                .get_or_load(&key, || state.grid_limit.run(|| decoder::make_grid_thumb(&state.registry, &file)))?;
+            Ok((*thumb).clone())
+        }
         // 仕分け対象の画像はキャッシュ（先読み）を使う
         Some(key) => {
             let preview = state.cache.get_or_load(&key, || decoder::make_preview(&state.registry, &file))?;
@@ -98,6 +109,7 @@ mod tests {
     #[test]
     fn parses_urls() {
         assert!(matches!(parse("/preview/3/12"), Some((3, Route::Preview(12)))));
+        assert!(matches!(parse("/grid/1/4"), Some((1, Route::Grid(4)))));
         assert!(matches!(parse("/thumb/1/0"), Some((1, Route::Thumb(0)))));
         assert!(matches!(parse("/conflict/2/existing"), Some((2, Route::Conflict { incoming: false }))));
         assert!(parse("/preview/x/1").is_none());
@@ -142,6 +154,17 @@ mod tests {
     }
 
     #[test]
+    fn serves_grid_thumbnail_from_its_own_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_with_session(dir.path());
+        assert_eq!(size(&serve(&state, "/grid/1/0").unwrap()), (300, 200), "480px より小さい画像はそのまま");
+        assert!(state.grid_cache.contains(&dir.path().join("a.png")));
+        assert!(!state.cache.contains(&dir.path().join("a.png")), "先読み用のキャッシュは押し出さない");
+        assert!(serve(&state, "/grid/2/0").unwrap_err().contains("古い画面"));
+        assert!(serve(&state, "/grid/1/9").unwrap_err().contains("見つかりません"));
+    }
+
+    #[test]
     fn rejects_stale_or_unknown_requests() {
         let dir = tempfile::tempdir().unwrap();
         let state = state_with_session(dir.path());
@@ -167,6 +190,7 @@ mod tests {
             .unwrap();
         assert!(!dir.path().join("a.png").exists());
         assert_eq!(size(&serve(&state, "/preview/1/0").unwrap()), (300, 200));
+        assert_eq!(size(&serve(&state, "/grid/1/0").unwrap()), (300, 200));
 
         write_dummy(&target.join("b.png"), 50, 40);
         state.session().as_mut().unwrap().session.apply(Action::MoveTo { dir: target, label: "t".into() }).unwrap();

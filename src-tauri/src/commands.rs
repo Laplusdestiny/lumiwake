@@ -328,6 +328,7 @@ pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs
     });
 
     state.cache.clear();
+    state.grid_cache.clear();
     let generation = state.next_generation();
     let session = Session::new(Arc::new(fileops::RealFs), result.images, trash);
     let old = state.session().replace(SessionState { session, generation, source, unsupported: result.unsupported });
