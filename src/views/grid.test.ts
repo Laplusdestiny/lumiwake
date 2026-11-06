@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const actions = vi.hoisted(() => ({ jumpTo: vi.fn(), perform: vi.fn() }));
+const actions = vi.hoisted(() => ({
+  jumpTo: vi.fn(),
+  perform: vi.fn(),
+  enqueue: vi.fn((task: () => Promise<void>) => task()),
+}));
 const api = vi.hoisted(() => ({ listItems: vi.fn() }));
 const toast = vi.hoisted(() => vi.fn());
 vi.mock("../actions", () => actions);
@@ -89,6 +93,37 @@ describe("開く・表示", () => {
     store.session = makeSession({ conflict: { item: 2, label: "a", dir: "/a", incoming: file, existing: file } });
     await open();
     expect(api.listItems).not.toHaveBeenCalled();
+    expect(store.screen).toBe("sort");
+  });
+
+  it("一覧の取得中に同名ファイルの確認が始まったら開かない", async () => {
+    let resolve!: (l: GridList) => void;
+    api.listItems.mockReturnValue(new Promise<GridList>((r) => (resolve = r)));
+    const opening = g.openGrid();
+    const file = { name: "c.jpg", path: "/c.jpg", size: 1, modified: null };
+    store.session = makeSession({ conflict: { item: 2, label: "a", dir: "/a", incoming: file, existing: file } });
+    resolve(makeGridList());
+    await opening;
+    expect(store.screen).toBe("sort");
+    expect(store.grid).toBeNull();
+  });
+
+  it("一覧の取得中に設定画面へ移ったら、設定画面のまま", async () => {
+    let resolve!: (l: GridList) => void;
+    api.listItems.mockReturnValue(new Promise<GridList>((r) => (resolve = r)));
+    const opening = g.openGrid();
+    store.screen = "settings";
+    resolve(makeGridList());
+    await opening;
+    expect(store.screen).toBe("settings");
+    expect(store.grid).toBeNull();
+  });
+
+  it("一覧を開いている間に同名ファイルの確認が始まったら閉じる", async () => {
+    await open();
+    const file = { name: "c.jpg", path: "/c.jpg", size: 1, modified: null };
+    store.session = makeSession({ conflict: { item: 2, label: "a", dir: "/a", incoming: file, existing: file } });
+    g.renderGrid(root);
     expect(store.screen).toBe("sort");
   });
 

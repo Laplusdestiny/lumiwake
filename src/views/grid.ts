@@ -1,5 +1,5 @@
 // 一覧画面。読み込んだ画像をサムネイルで並べ、選んだ画像を 1 枚表示で開く（ファイル操作はしない）
-import { api, errorText, lumiUrl, type GridItem } from "../api";
+import { api, errorText, lumiUrl, type GridItem, type GridList } from "../api";
 import * as actions from "../actions";
 import { displayCombo } from "../keys";
 import { notify, store } from "../store";
@@ -77,21 +77,36 @@ function keepSelectionVisible(): void {
   if (!items.some((i) => i.index === selected)) selected = items[0]?.index ?? null;
 }
 
-export async function openGrid(): Promise<void> {
-  const s = store.session;
-  if (!s || s.conflict) return;
-  try {
-    store.grid = await api.listItems();
-  } catch (e) {
-    toast(errorText(e), "error");
-    return;
-  }
-  filter = "";
-  built = null;
-  selected = store.grid.current ?? store.grid.items[0]?.index ?? null;
-  store.screen = "grid";
-  notify();
-  focusList();
+/** 同名ファイルの確認中など、一覧を開けない状態か */
+function cannotOpen(): boolean {
+  return !store.session || !!store.session.conflict || store.screen !== "sort";
+}
+
+/**
+ * 一覧を開く。先に押した振り分けの結果を見てから開くよう、操作の列に並べる
+ * （振り分けが同名ファイルの確認になったら、確認を優先して開かない）
+ */
+export function openGrid(): Promise<void> {
+  if (cannotOpen()) return Promise.resolve();
+  return actions.enqueue(async () => {
+    if (cannotOpen()) return;
+    let list: GridList;
+    try {
+      list = await api.listItems();
+    } catch (e) {
+      toast(errorText(e), "error");
+      return;
+    }
+    // 取得中に設定画面へ移ったり、同名ファイルの確認が始まったりしたら開かない
+    if (cannotOpen()) return;
+    store.grid = list;
+    filter = "";
+    built = null;
+    selected = list.current ?? list.items[0]?.index ?? null;
+    store.screen = "grid";
+    notify();
+    focusList();
+  });
 }
 
 export function closeGrid(): void {
@@ -189,8 +204,9 @@ export function renderGrid(root: HTMLElement): void {
   const list = store.grid;
   const s = store.session;
   if (!list || !s || !store.config) return;
-  // 設定で並び順を変えたときなど、画像の番号が変わったら古い一覧は使えない
-  if (list.generation !== s.generation) return closeGrid();
+  // 設定で並び順を変えたときなど、画像の番号が変わったら古い一覧は使えない。
+  // 同名ファイルの確認が始まったら、確認ダイアログを出せるよう仕分け画面へ戻る
+  if (list.generation !== s.generation || s.conflict) return closeGrid();
   rootEl = root;
   if (root.dataset.view !== "grid") {
     root.innerHTML = skeleton();

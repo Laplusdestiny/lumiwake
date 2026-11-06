@@ -232,6 +232,32 @@ describe("一覧", () => {
     expect(store.screen).toBe("sort");
   });
 
+  it("振り分けの処理中に一覧キーを押しても、同名ファイルの確認になったら一覧を開かない", async () => {
+    const conflict = {
+      item: 2,
+      label: "風景",
+      dir: "/d",
+      incoming: { name: "c.jpg", path: "/a/c.jpg", size: null, modified: null },
+      existing: { name: "c.jpg", path: "/d/c.jpg", size: null, modified: null },
+    };
+    let finish!: () => void;
+    invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) =>
+      cmd === "perform"
+        ? new Promise((r) => (finish = () => r({ view: makeSession({ conflict }), message: null })))
+        : respond(cmd, args),
+    );
+    (await import("./store")).notify();
+    press("Digit1");
+    press("KeyL", { ctrlKey: true, shiftKey: true });
+    await new Promise((r) => setTimeout(r, 0));
+    finish();
+    await vi.waitFor(() => expect(store.session?.conflict).not.toBeNull());
+    await new Promise((r) => setTimeout(r, 0));
+    invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => respond(cmd, args));
+    expect(commands()).not.toContain("list_items");
+    expect(store.screen).toBe("sort");
+  });
+
   it("同名ファイルの確認中は一覧ボタンを押しても開かない", async () => {
     store.session = makeSession({
       conflict: {
