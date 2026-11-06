@@ -9,7 +9,9 @@ const actions = vi.hoisted(() => ({
 }));
 const api = vi.hoisted(() => ({ setShowPaths: vi.fn() }));
 const toast = vi.hoisted(() => vi.fn());
+const grid = vi.hoisted(() => ({ openGrid: vi.fn() }));
 vi.mock("../actions", () => actions);
+vi.mock("./grid", () => grid);
 vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), api }));
 vi.mock("../toast", () => ({ toast }));
 
@@ -29,6 +31,28 @@ beforeEach(() => {
   store.session = makeSession();
   store.info = null;
   store.home = "/home/u";
+});
+
+describe("一覧", () => {
+  it("一覧ボタンを出し、toggle_grid で一覧を開く", () => {
+    renderSorter(root);
+    expect(root.querySelector('[data-action="grid"]')).not.toBeNull();
+    expect(text('[data-slot="hints"]')).toContain("Ctrl+Shift+L 一覧");
+    expect(key("Ctrl+Shift+L")).toBe(true);
+    expect(grid.openGrid).toHaveBeenCalled();
+  });
+
+  it("全画面型にも一覧ボタンを出す", () => {
+    store.config = makeConfig({ view_mode: "focus" });
+    renderSorter(root);
+    expect(root.querySelector('[data-action="grid"]')).not.toBeNull();
+  });
+
+  it("すべて処理し終えた後も一覧を開ける", () => {
+    store.session = makeSession({ current: null });
+    expect(key("Ctrl+Shift+L")).toBe(true);
+    expect(grid.openGrid).toHaveBeenCalled();
+  });
 });
 
 describe("renderSorter", () => {
