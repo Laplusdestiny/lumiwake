@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // 画面全体の結合テスト。Rust 側（invoke）だけを差し替え、キー入力・クリックから呼ばれるコマンドを確かめる
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeConfig, makeSession } from "./test/fixtures";
+import { makeConfig, makeGridList, makeSession } from "./test/fixtures";
 
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
@@ -30,6 +30,8 @@ function respond(command: string, args?: Record<string, unknown>): unknown {
       return makeConfig({ view_mode: args!.mode as "focus" });
     case "pending_deletions":
       return { items: [], trashDir: null, onExit: "confirm" };
+    case "list_items":
+      return makeGridList();
     case "image_info":
       return { name: "c.jpg", path: "/c.jpg", size: 1, modified: null, width: 1, height: 1, taken: null };
     default:
@@ -158,6 +160,145 @@ describe("キー入力", () => {
   it("Ctrl+Q で終了する", async () => {
     press("KeyQ", { ctrlKey: true });
     await vi.waitFor(() => expect(commands()).toContain("exit_app"));
+  });
+});
+
+describe("一覧", () => {
+  const openByKey = async () => {
+    (await import("./store")).notify();
+    expect(press("KeyL", { ctrlKey: true, shiftKey: true })).toBe(true);
+    await vi.waitFor(() => expect(root().dataset.view).toBe("grid"));
+  };
+  const tileSize = () => document.documentElement.style.getPropertyValue("--grid-tile");
+
+  it("Ctrl+Shift+L で一覧を開き、Enter で選んだ画像へ移動して戻る", async () => {
+    await openByKey();
+    press("ArrowRight");
+    press("Enter");
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("jump_to", { index: 3 }));
+    expect(store.screen).toBe("sort");
+  });
+
+  it("一覧では振り分け・削除・スキップのキーでファイルを動かさない", async () => {
+    await openByKey();
+    press("Digit1");
+    press("Delete");
+    press("Space");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(commands()).toEqual(["list_items"]);
+    press("Escape");
+    expect(store.screen).toBe("sort");
+  });
+
+  it("Ctrl+= でタイルを大きくし、WebView の拡大にはしない", async () => {
+    await openByKey();
+    expect(press("Equal", { ctrlKey: true })).toBe(true);
+    expect(tileSize()).toBe("240px");
+    press("Digit0", { ctrlKey: true });
+    expect(tileSize()).toBe("160px");
+    press("Escape");
+  });
+
+  it("Ctrl+ホイールで大きさを変え、既定の拡大は止める", async () => {
+    await openByKey();
+    const e = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+    Object.defineProperty(e, "ctrlKey", { value: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(tileSize()).toBe("240px");
+    press("Digit0", { ctrlKey: true });
+    press("Escape");
+  });
+
+  it("一覧以外の画面では Ctrl+ホイールも入力欄も一覧に渡さない", async () => {
+    (await import("./store")).notify();
+    const e = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+    Object.defineProperty(e, "ctrlKey", { value: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+    const input = document.createElement("input");
+    input.dataset.grid = "size";
+    input.value = "300";
+    root().appendChild(input);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.remove();
+    await openByKey();
+    expect(tileSize()).toBe("160px");
+    press("Escape");
+  });
+
+  it("一覧の写しがなければ一覧の画面にせず仕分け画面を出す", async () => {
+    store.screen = "grid";
+    store.grid = null;
+    (await import("./store")).notify();
+    expect(store.screen).toBe("sort");
+    expect(root().dataset.view).toBe("sort-sidebar");
+  });
+
+  it("絞り込み欄に入力すると絞り込み、Enter で一覧に戻って開ける", async () => {
+    await openByKey();
+    const input = root().querySelector<HTMLInputElement>('[data-grid="filter"]')!;
+    input.focus();
+    input.value = "cat";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(root().querySelectorAll(".grid-tile")).toHaveLength(2);
+    expect(press("Enter", {}, input)).toBe(true);
+    press("Enter");
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("jump_to", { index: 3 }));
+  });
+
+  it("一覧ボタンで開き、タイルのクリックで開く", async () => {
+    root().dataset.view = "";
+    (await import("./store")).notify();
+    root().querySelector<HTMLElement>('[data-action="grid"]')!.click();
+    await vi.waitFor(() => expect(root().dataset.view).toBe("grid"));
+    root().querySelector<HTMLElement>('.grid-tile[data-index="4"]')!.click();
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("jump_to", { index: 4 }));
+    expect(store.screen).toBe("sort");
+  });
+
+  it("振り分けの処理中に一覧キーを押しても、同名ファイルの確認になったら一覧を開かない", async () => {
+    const conflict = {
+      item: 2,
+      label: "風景",
+      dir: "/d",
+      incoming: { name: "c.jpg", path: "/a/c.jpg", size: null, modified: null },
+      existing: { name: "c.jpg", path: "/d/c.jpg", size: null, modified: null },
+    };
+    let finish!: () => void;
+    invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) =>
+      cmd === "perform"
+        ? new Promise((r) => (finish = () => r({ view: makeSession({ conflict }), message: null })))
+        : respond(cmd, args),
+    );
+    (await import("./store")).notify();
+    press("Digit1");
+    press("KeyL", { ctrlKey: true, shiftKey: true });
+    await new Promise((r) => setTimeout(r, 0));
+    finish();
+    await vi.waitFor(() => expect(store.session?.conflict).not.toBeNull());
+    await new Promise((r) => setTimeout(r, 0));
+    invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => respond(cmd, args));
+    expect(commands()).not.toContain("list_items");
+    expect(store.screen).toBe("sort");
+  });
+
+  it("同名ファイルの確認中は一覧ボタンを押しても開かない", async () => {
+    store.session = makeSession({
+      conflict: {
+        item: 2,
+        label: "風景",
+        dir: "/d",
+        incoming: { name: "c.jpg", path: "/a/c.jpg", size: null, modified: null },
+        existing: { name: "c.jpg", path: "/d/c.jpg", size: null, modified: null },
+      },
+    });
+    root().dataset.view = "";
+    (await import("./store")).notify();
+    root().querySelector<HTMLElement>('[data-action="grid"]')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(commands()).not.toContain("list_items");
+    expect(store.screen).toBe("sort");
   });
 });
 

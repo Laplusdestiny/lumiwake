@@ -117,6 +117,8 @@ pub struct ActionKeys {
     pub toggle_view: String,
     /// 振り分け先リストのパス表示の切り替え
     pub toggle_paths: String,
+    /// 一覧表示の切り替え
+    pub toggle_grid: String,
 }
 
 impl Default for ActionKeys {
@@ -130,12 +132,14 @@ impl Default for ActionKeys {
             // 単独キーは振り分けに使えるよう空けておき、表示の切り替えは組み合わせキーにする
             toggle_view: "Ctrl+Shift+F".into(),
             toggle_paths: "Ctrl+Shift+P".into(),
+            // Ctrl+Shift+G は WebView の検索と重なるので避ける
+            toggle_grid: "Ctrl+Shift+L".into(),
         }
     }
 }
 
 impl ActionKeys {
-    fn entries(&self) -> [(&'static str, &str); 7] {
+    fn entries(&self) -> [(&'static str, &str); 8] {
         [
             ("スキップ", &self.skip),
             ("削除", &self.delete),
@@ -144,10 +148,11 @@ impl ActionKeys {
             ("次の画像", &self.next),
             ("表示モード切り替え", &self.toggle_view),
             ("パス表示の切り替え", &self.toggle_paths),
+            ("一覧表示の切り替え", &self.toggle_grid),
         ]
     }
 
-    fn entries_mut(&mut self) -> [&mut String; 7] {
+    fn entries_mut(&mut self) -> [&mut String; 8] {
         [
             &mut self.skip,
             &mut self.delete,
@@ -156,6 +161,7 @@ impl ActionKeys {
             &mut self.next,
             &mut self.toggle_view,
             &mut self.toggle_paths,
+            &mut self.toggle_grid,
         ]
     }
 }
@@ -592,6 +598,19 @@ mod tests {
     fn syntax_errors_are_reported() {
         assert!(matches!(parse("[general\n", Path::new("x")), Err(ConfigError::Parse { .. })));
         assert!(matches!(parse("[general]\non_exit = \"never\"", Path::new("x")), Err(ConfigError::Parse { .. })));
+    }
+
+    #[test]
+    fn toggle_grid_defaults_and_is_checked_for_duplicates() {
+        // 項目のない既存の設定ファイルは既定値で補う
+        let c = parse("[keys]\ntoggle_view = \"Alt+V\"\n", Path::new("x")).unwrap();
+        assert_eq!(c.keys.toggle_grid, "Ctrl+Shift+L");
+        // 振り分けキーとの重複を検出する
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = Config { targets: vec![target("1", "風景", dir.path())], ..Default::default() };
+        c.keys.toggle_grid = "1".into();
+        let issues = c.validate();
+        assert!(issues.iter().any(|i| i.key.as_deref() == Some("1") && i.message.contains("一覧表示の切り替え")));
     }
 
     #[test]

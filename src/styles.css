@@ -1251,3 +1251,142 @@ body.resizing * {
 .update-banner .icon-btn {
   border: 0;
 }
+
+/* ---- 一覧 ---- */
+
+.grid-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.grid-filter {
+  width: 280px;
+  max-width: 40vw;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.grid-filter:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.grid-count {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.grid-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.grid-size input {
+  width: 120px;
+  accent-color: var(--accent);
+}
+.grid-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+  outline: none;
+}
+.grid-tiles {
+  display: grid;
+  /* gap は grid.ts の GRID_GAP とそろえる */
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-tile, 160px), 1fr));
+}
+.grid-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.grid-tile:hover {
+  background: var(--surface);
+}
+.grid-tile:focus-visible {
+  outline: none;
+}
+.grid-tile.is-selected {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.grid-thumb {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--bg-deep);
+}
+.grid-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.grid-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.grid-label {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.7);
+  font-size: 11px;
+}
+.grid-tile.state-moved,
+.grid-tile.state-deleted {
+  opacity: 0.45;
+}
+.grid-tile.state-moved.is-selected,
+.grid-tile.state-deleted.is-selected {
+  opacity: 0.7;
+}
+.grid-tile.state-skipped .grid-label {
+  color: var(--warn);
+}
+.grid-thumb {
+  position: relative;
+}
+/* 画像の上に重ねる（box-shadow の inset だと画像の下に隠れる） */
+.grid-tile.is-current .grid-thumb::after {
+  content: "表示中";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 11px;
+  font-weight: 700;
+}
+.grid-empty {
+  grid-column: 1 / -1;
+  padding: 48px 0;
+  text-align: center;
+  color: var(--muted);
+}

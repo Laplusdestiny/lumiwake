@@ -3,33 +3,39 @@
 //! 同じ画像を同時に要求された場合（先読み中に表示要求が来た場合など）は、
 //! デコードを 1 回だけ行い、後から来た側は完了を待つ。
 
-use super::Preview;
+use super::{Encoded, Preview};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
-enum Slot {
+enum Slot<V> {
     Loading,
-    Ready(Arc<Preview>),
+    Ready(Arc<V>),
     Failed(String),
 }
 
-struct Inner {
-    map: HashMap<PathBuf, Slot>,
+struct Inner<V> {
+    map: HashMap<PathBuf, Slot<V>>,
     /// 古い順（先頭から追い出す）
     order: VecDeque<PathBuf>,
 }
 
-pub struct PreviewCache {
-    inner: Mutex<Inner>,
+/// 画像のパスをキーにした LRU キャッシュ
+pub struct LruCache<V> {
+    inner: Mutex<Inner<V>>,
     ready: Condvar,
     capacity: usize,
 }
 
-impl PreviewCache {
+/// 表示用画像（先読み）のキャッシュ
+pub type PreviewCache = LruCache<Preview>;
+/// 一覧用サムネイルのキャッシュ
+pub type ThumbCache = LruCache<Encoded>;
+
+impl<V> LruCache<V> {
     pub fn new(capacity: usize) -> Self {
-        PreviewCache {
+        LruCache {
             inner: Mutex::new(Inner { map: HashMap::new(), order: VecDeque::new() }),
             ready: Condvar::new(),
             capacity: capacity.max(1),
@@ -37,11 +43,7 @@ impl PreviewCache {
     }
 
     /// キャッシュにあれば返し、なければ `load` で作って入れる
-    pub fn get_or_load(
-        &self,
-        key: &Path,
-        load: impl FnOnce() -> Result<Preview, String>,
-    ) -> Result<Arc<Preview>, String> {
+    pub fn get_or_load(&self, key: &Path, load: impl FnOnce() -> Result<V, String>) -> Result<Arc<V>, String> {
         let mut inner = self.inner.lock().unwrap();
         loop {
             match inner.map.get(key) {
@@ -87,7 +89,7 @@ impl PreviewCache {
         inner.order.clear();
     }
 
-    fn evict(&self, inner: &mut Inner) {
+    fn evict(&self, inner: &mut Inner<V>) {
         while inner.order.len() > self.capacity {
             let Some(old) = inner.order.pop_front() else { break };
             inner.map.remove(&old);
@@ -203,6 +205,18 @@ mod tests {
         cache.get_or_load(Path::new("c"), load).unwrap(); // b が追い出される
         assert!(cache.contains(Path::new("a")));
         assert!(!cache.contains(Path::new("b")));
+        assert!(cache.contains(Path::new("c")));
+    }
+
+    #[test]
+    fn thumb_cache_evicts_oldest() {
+        let cache = ThumbCache::new(2);
+        let load = || Ok(super::super::Encoded { bytes: vec![1], mime: "image/jpeg" });
+        for key in ["a", "b", "c"] {
+            cache.get_or_load(Path::new(key), load).unwrap();
+        }
+        assert!(!cache.contains(Path::new("a")));
+        assert!(cache.contains(Path::new("b")));
         assert!(cache.contains(Path::new("c")));
     }
 

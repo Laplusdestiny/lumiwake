@@ -38,6 +38,7 @@ prev = "Left"
 next = "Right"
 toggle_view = "Ctrl+Shift+F"             # サイドバー型 ⇔ 全画面型
 toggle_paths = "Ctrl+Shift+P"            # パス表示の切り替え
+toggle_grid = "Ctrl+Shift+L"             # 一覧表示の切り替え
 
 [[targets]]
 key = "1"

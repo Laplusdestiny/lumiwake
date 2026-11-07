@@ -4,6 +4,7 @@ import * as actions from "../actions";
 import { displayCombo } from "../keys";
 import { notify, store } from "../store";
 import { toast } from "../toast";
+import { openGrid } from "./grid";
 import { esc, formatBytes, formatCount, formatDate, icons, keycap, shortPath } from "../util";
 
 type Mode = Config["general"]["view_mode"];
@@ -26,6 +27,7 @@ function sidebarSkeleton(): string {
         <button data-action="mode" data-mode="focus" aria-pressed="false">全画面</button>
       </div>
       <div class="progress" data-slot="progress"></div>
+      <button class="icon-btn" data-action="grid" aria-label="一覧" data-slot="grid-btn">${icons.grid}</button>
       <button class="icon-btn" data-action="undo" aria-label="取り消し" title="取り消し">${icons.undo}</button>
       <button class="icon-btn" data-action="settings" aria-label="設定" title="設定（Ctrl+,）">${icons.settings}</button>
     </header>
@@ -52,6 +54,7 @@ function focusSkeleton(): string {
     <div class="focus-top-left"><div class="meta" data-slot="meta"></div></div>
     <div class="focus-top-right">
       <div class="progress" data-slot="progress"></div>
+      <button class="icon-btn glass" data-action="grid" aria-label="一覧" data-slot="grid-btn">${icons.grid}</button>
       <button class="icon-btn glass" data-action="undo" aria-label="取り消し" title="取り消し">${icons.undo}</button>
       <button class="icon-btn glass" data-action="mode" data-mode="sidebar" aria-label="全画面を終了" title="全画面を終了（Esc）">${icons.exitFull}</button>
     </div>
@@ -189,6 +192,7 @@ function hintsHtml(): string {
     `${displayCombo(k.prev)} ${displayCombo(k.next)} 前後`,
     `${displayCombo(k.undo)} 取り消し`,
     `${displayCombo(k.toggle_view)} 表示切替`,
+    `${displayCombo(k.toggle_grid)} 一覧`,
   ]
     .filter(Boolean)
     .map((t) => `<span>${esc(t)}</span>`)
@@ -286,6 +290,7 @@ export function renderSorter(root: HTMLElement): void {
   const targets = slot("targets")!;
   targets.innerHTML = mode === "focus" ? chipsHtml() : targetsHtml(s);
   targets.classList.toggle("compact", !cfg.config.general.show_paths);
+  slot("grid-btn")!.title = `一覧（${displayCombo(cfg.config.keys.toggle_grid)}）`;
   const pathToggle = slot("path-toggle");
   if (pathToggle) pathToggle.innerHTML = pathToggleHtml();
   root.querySelectorAll<HTMLButtonElement>('[data-action="undo"]').forEach((b) => (b.disabled = !s.canUndo));
@@ -307,6 +312,7 @@ export function handleSorterKey(combo: string, e: KeyboardEvent): boolean {
   if (combo === k.next) return void actions.navigate(true), true;
   if (combo === k.toggle_view) return toggleMode(), true;
   if (combo === k.toggle_paths) return void togglePaths(), true;
+  if (combo === k.toggle_grid) return void openGrid(), true;
   if (combo === "Escape" && c.general.view_mode === "focus") return setMode("sidebar"), true;
   if (!s.current) return false;
   if (combo === k.skip) return void actions.perform({ kind: "skip" }), true;

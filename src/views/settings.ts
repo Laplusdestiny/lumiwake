@@ -24,6 +24,7 @@ const ACTIONS: { name: keyof Config["keys"]; label: string }[] = [
   { name: "next", label: "次の画像" },
   { name: "toggle_view", label: "表示モードの切り替え" },
   { name: "toggle_paths", label: "フォルダのパス表示の切り替え" },
+  { name: "toggle_grid", label: "一覧表示の切り替え" },
 ];
 
 export function openSettings(sec?: Section): void {

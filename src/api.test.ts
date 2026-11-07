@@ -32,6 +32,7 @@ describe("api", () => {
     ["undo", [], "undo", undefined],
     ["navigate", [false], "navigate", { forward: false }],
     ["jumpTo", [3], "jump_to", { index: 3 }],
+    ["listItems", [], "list_items", undefined],
     ["imageInfo", [7, 1], "image_info", { generation: 7, index: 1 }],
     ["pendingDeletions", [], "pending_deletions", undefined],
     ["finalizeAndExit", [true], "finalize_and_exit", { delete: true }],

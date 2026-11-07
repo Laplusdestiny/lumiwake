@@ -46,6 +46,7 @@ export interface Config {
     next: string;
     toggle_view: string;
     toggle_paths: string;
+    toggle_grid: string;
   };
   targets: Target[];
 }
@@ -118,6 +119,23 @@ export interface SessionView {
   conflict: ConflictView | null;
 }
 
+export type GridState = "pending" | "skipped" | "moved" | "deleted";
+
+export interface GridItem {
+  index: number;
+  name: string;
+  state: GridState;
+  /** 移動先の振り分け先の名前、または「削除予定」 */
+  label: string | null;
+}
+
+/** 一覧表示用の、読み込んだすべての画像 */
+export interface GridList {
+  generation: number;
+  current: number | null;
+  items: GridItem[];
+}
+
 export interface ActionResult {
   view: SessionView;
   message: string | null;
@@ -167,6 +185,7 @@ export const api = {
   undo: () => invoke<ActionResult>("undo"),
   navigate: (forward: boolean) => invoke<SessionView>("navigate", { forward }),
   jumpTo: (index: number) => invoke<SessionView>("jump_to", { index }),
+  listItems: () => invoke<GridList>("list_items"),
   imageInfo: (generation: number, index: number) => invoke<ImageInfo>("image_info", { generation, index }),
   pendingDeletions: () => invoke<DeletionSummary>("pending_deletions"),
   finalizeAndExit: (del: boolean) => invoke<FinalizeReport>("finalize_and_exit", { delete: del }),

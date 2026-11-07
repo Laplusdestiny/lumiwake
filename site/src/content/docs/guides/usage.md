@@ -36,6 +36,7 @@ description: 画像を振り分ける基本の流れ
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | 取り消し（何段でも） |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | サイドバー型 ⇔ 全画面型の切り替え |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> | 振り分け先リストのパス表示の切り替え（リストの「パスを隠す」ボタンでも可） |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> | 一覧表示を開く／閉じる（上部の一覧ボタンでも可） |
 | <kbd>Esc</kbd> | 全画面型を抜ける／ダイアログを閉じる |
 | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | 終了 |
 
@@ -49,6 +50,23 @@ description: 画像を振り分ける基本の流れ
   <img class="shot" src="/lumiwake/sort-sidebar.webp" width="1600" height="1038" loading="lazy" alt="サイドバー型の表示。中央に画像のプレビュー、右にキーとフルパス付きの振り分け先リスト" />
   <img class="shot" src="/lumiwake/sort-fullscreen.webp" width="1600" height="1038" loading="lazy" alt="全画面集中型の表示。画像を画面いっぱいに表示し、下部に振り分けキーと振り分け先の名前が一列に並ぶ" />
 </div>
+
+### 一覧表示
+
+仕分け元にたくさんの画像があって目当ての 1 枚を探したいときは、<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>（または上部の一覧ボタン）で読み込んだ画像を一覧で表示できます。画像を選んで <kbd>Enter</kbd>（またはクリック）を押すと 1 枚表示に戻り、その画像をそのまま振り分けられます。
+
+| キー | 操作 |
+| --- | --- |
+| <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>PageUp</kbd> <kbd>PageDown</kbd> / <kbd>Home</kbd> <kbd>End</kbd> | 画像を選ぶ |
+| <kbd>Enter</kbd> | 選んだ画像を開く |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> | ファイル名で絞り込む（絞り込み欄で <kbd>Enter</kbd> か <kbd>↓</kbd> を押すと一覧に戻る） |
+| <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> | サムネイルを大きく／小さく（4 段階。<kbd>Ctrl</kbd>+ホイールでも可） |
+| <kbd>Ctrl</kbd>+<kbd>0</kbd> | サムネイルを元の大きさに戻す |
+| <kbd>Esc</kbd> | 元の画面に戻る |
+
+- サムネイルの大きさは上部のスライダーでも自由に変えられ、次回も同じ大きさで表示します
+- 振り分け済みの画像も薄く表示し、移動先（「→風景」など）や「削除予定」を表示します。振り分け済みの画像は開けないので、<kbd>Ctrl</kbd>+<kbd>Z</kbd> で取り消してから振り分け直してください
+- 一覧表示では振り分け・削除・スキップのキーは効きません
 
 ## 4. 同じ名前のファイルがあったら
 

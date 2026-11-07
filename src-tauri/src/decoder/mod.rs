@@ -7,8 +7,10 @@
 mod cache;
 #[cfg(feature = "heic")]
 mod heif;
+mod limit;
 
-pub use cache::{PrefetchJob, Prefetcher, PreviewCache};
+pub use cache::{PrefetchJob, Prefetcher, PreviewCache, ThumbCache};
+pub use limit::DecodeLimit;
 
 use crate::format::Format;
 use image::codecs::jpeg::JpegEncoder;
@@ -23,6 +25,8 @@ use std::path::Path;
 pub const PREVIEW_MAX: u32 = 2560;
 /// フィルムストリップのサムネイルの最大辺（px）
 pub const THUMB_MAX: u32 = 240;
+/// 一覧のサムネイルの最大辺（px）。タイルを最大（360px）にしても、高 DPI の画面でもぼやけない大きさ
+pub const GRID_THUMB_MAX: u32 = 480;
 
 pub trait Decoder: Send + Sync {
     fn name(&self) -> &'static str;
@@ -135,6 +139,11 @@ pub fn make_preview(registry: &Registry, path: &Path) -> Result<Preview, String>
     Ok(Preview { full: encode(&full)?, thumb: encode(&thumb)?, width, height })
 }
 
+/// 一覧用のサムネイルを作る（表示用の画像は作らない）
+pub fn make_grid_thumb(registry: &Registry, path: &Path) -> Result<Encoded, String> {
+    encode(&fit(registry.decode(path)?, GRID_THUMB_MAX))
+}
+
 fn fit(img: DynamicImage, max: u32) -> DynamicImage {
     if img.width() <= max && img.height() <= max {
         return img;
@@ -197,6 +206,16 @@ pub(crate) mod tests {
         assert_eq!(r.supports(Format::Avif), cfg!(feature = "avif"));
         assert_eq!(r.supports(Format::Heic), cfg!(feature = "heic"));
         assert_eq!(r.format_support().len(), Format::ALL.len());
+    }
+
+    #[test]
+    fn grid_thumb_is_480px_on_the_long_side() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.png");
+        write_dummy(&p, 1200, 600);
+        let enc = make_grid_thumb(&Registry::builtin(), &p).unwrap();
+        let img = image::load_from_memory(&enc.bytes).unwrap();
+        assert_eq!((img.width(), img.height()), (480, 240));
     }
 
     #[test]

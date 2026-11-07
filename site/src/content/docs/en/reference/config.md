@@ -38,6 +38,7 @@ prev = "Left"
 next = "Right"
 toggle_view = "Ctrl+Shift+F"               # sidebar / full-screen
 toggle_paths = "Ctrl+Shift+P"              # show / hide folder paths
+toggle_grid = "Ctrl+Shift+L"               # open / close the grid view
 
 [[targets]]
 key = "1"

@@ -328,6 +328,7 @@ pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs
     });
 
     state.cache.clear();
+    state.grid_cache.clear();
     let generation = state.next_generation();
     let session = Session::new(Arc::new(fileops::RealFs), result.images, trash);
     let old = state.session().replace(SessionState { session, generation, source, unsupported: result.unsupported });
@@ -423,6 +424,67 @@ pub fn jump_to(state: State<'_, AppState>, index: usize) -> CmdResult<SessionVie
         }
     })
     .map(|(_, v)| v)
+}
+
+/// 一覧に出す画像の状態
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GridState {
+    Pending,
+    Skipped,
+    Moved,
+    /// 削除フォルダへ移動済み、または元の場所で削除予定
+    Deleted,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GridItem {
+    index: usize,
+    name: String,
+    state: GridState,
+    /// 移動先の振り分け先の名前、または「削除予定」
+    label: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GridList {
+    generation: u64,
+    current: Option<usize>,
+    items: Vec<GridItem>,
+}
+
+/// 一覧表示用に、読み込んだすべての画像を並び順のまま返す
+#[tauri::command]
+pub fn list_items(state: State<'_, AppState>) -> CmdResult<GridList> {
+    let targets = state.config().config.targets.clone();
+    let guard = state.session();
+    let s = guard.as_ref().ok_or("仕分け元フォルダが読み込まれていません")?;
+    let items = s
+        .session
+        .items()
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let (state, label) = match &item.status {
+                Status::Pending => (GridState::Pending, None),
+                Status::Skipped => (GridState::Skipped, None),
+                Status::Moved { to } => {
+                    let dir = to.parent();
+                    let label = match targets.iter().find(|t| dir == Some(t.path.as_path())) {
+                        Some(t) => t.display_name(),
+                        // 振り分け先から外したフォルダはフォルダ名で出す
+                        None => dir.map(fileops::file_name).unwrap_or_default(),
+                    };
+                    (GridState::Moved, Some(label))
+                }
+                Status::Trashed { .. } | Status::Marked { .. } => (GridState::Deleted, Some("削除予定".into())),
+            };
+            GridItem { index, name: fileops::file_name(&item.path), state, label }
+        })
+        .collect();
+    Ok(GridList { generation: s.generation, current: s.session.current(), items })
 }
 
 #[derive(Serialize)]
@@ -652,6 +714,46 @@ mod tests {
         assert!(!r.view.can_undo);
         assert_eq!(current_name(&r.view), Some("1.png"));
         assert!(undo(f.state()).is_err());
+    }
+
+    #[test]
+    fn list_items_reports_every_image_with_its_state() {
+        let f = Fixture::new();
+        f.start();
+        f.act(ActionArg::Move { target: 0 }); // 1.png → a
+        f.act(ActionArg::Skip); // 2.png は保留
+        let v = f.act(ActionArg::Delete); // 3.png は削除予定（削除フォルダ未指定）
+        let list = list_items(f.state()).unwrap();
+        let got: Vec<_> = list.items.iter().map(|i| (i.index, i.name.as_str(), i.state, i.label.as_deref())).collect();
+        assert_eq!(
+            got,
+            [
+                (0, "1.png", GridState::Moved, Some("a")),
+                (1, "2.png", GridState::Skipped, None),
+                (2, "3.png", GridState::Deleted, Some("削除予定")),
+            ]
+        );
+        assert_eq!(list.generation, v.generation);
+        assert_eq!(list.current, v.current.map(|c| c.index));
+    }
+
+    #[test]
+    fn list_items_labels_moves_outside_the_targets_by_folder_name() {
+        let f = Fixture::new();
+        f.start();
+        f.act(ActionArg::Move { target: 1 }); // 1.png → b
+                                              // 振り分け先から外しても、移動先のフォルダ名で表示する
+        let mut config = f.config().config;
+        config.targets.truncate(1);
+        save_config(f.state(), config).unwrap();
+        let list = list_items(f.state()).unwrap();
+        assert_eq!(list.items[0].label.as_deref(), Some("b"));
+        assert_eq!(list.items[1].state, GridState::Pending);
+    }
+
+    #[test]
+    fn list_items_fails_before_loading_a_folder() {
+        assert!(list_items(Fixture::new().state()).is_err());
     }
 
     #[test]

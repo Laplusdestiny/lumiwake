@@ -36,6 +36,7 @@ Recently used folders (up to 10) are listed on the start screen; pick one by cli
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | Undo (unlimited) |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | Toggle sidebar / full-screen view |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> | Show / hide folder paths in the destination list (also a button above the list) |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> | Open / close the grid view (also a button at the top) |
 | <kbd>Esc</kbd> | Leave full-screen / close dialogs |
 | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | Quit |
 
@@ -49,6 +50,24 @@ Switch between the **sidebar** layout (preview plus destination list) and the **
   <img class="shot" src="/lumiwake/sort-sidebar.webp" width="1600" height="1038" loading="lazy" alt="Sidebar layout: the image preview in the center and the destination list with keys and full paths on the right" />
   <img class="shot" src="/lumiwake/sort-fullscreen.webp" width="1600" height="1038" loading="lazy" alt="Full-screen focus layout: the image fills the window and the destination keys and names are lined up along the bottom" />
 </div>
+
+
+### Grid view
+
+When the source folder holds many images and you are looking for one of them, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> (or the grid button at the top) to see all loaded images as thumbnails. Select an image and press <kbd>Enter</kbd> (or click it) to go back to the single-image view with that image, ready to sort.
+
+| Key | Action |
+| --- | --- |
+| <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>PageUp</kbd> <kbd>PageDown</kbd> / <kbd>Home</kbd> <kbd>End</kbd> | Select an image |
+| <kbd>Enter</kbd> | Open the selected image |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> | Filter by file name (press <kbd>Enter</kbd> or <kbd>↓</kbd> in the filter box to go back to the grid) |
+| <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> | Larger / smaller thumbnails (4 steps; <kbd>Ctrl</kbd>+wheel also works) |
+| <kbd>Ctrl</kbd>+<kbd>0</kbd> | Reset the thumbnail size |
+| <kbd>Esc</kbd> | Go back |
+
+- The slider at the top changes the thumbnail size freely, and the size is kept for next time
+- Images you have already sorted are shown dimmed, labeled with their destination (such as “→風景”) or “削除予定” (marked for deletion). They cannot be opened; undo with <kbd>Ctrl</kbd>+<kbd>Z</kbd> to sort them again
+- The sorting, delete and skip keys do nothing in the grid view
 
 ## 4. When a file with the same name exists
 

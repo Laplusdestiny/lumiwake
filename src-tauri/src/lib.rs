@@ -56,6 +56,7 @@ pub fn run() {
             commands::undo,
             commands::navigate,
             commands::jump_to,
+            commands::list_items,
             commands::image_info,
             commands::pending_deletions,
             commands::finalize_and_exit,

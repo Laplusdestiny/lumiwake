@@ -5,11 +5,12 @@
 //!
 //! - `/preview/{generation}/{index}` 表示用（最大 2560px）
 //! - `/thumb/{generation}/{index}` フィルムストリップ用
+//! - `/grid/{generation}/{index}` 一覧用（最大 480px。先読みとは別のキャッシュ）
 //! - `/conflict/{generation}/{incoming|existing}` 同名ファイルの比較用
 
 use crate::decoder::{self, Encoded};
 use crate::state::{location, AppState};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
@@ -38,6 +39,7 @@ pub fn handle<R: Runtime>(ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>
 enum Route {
     Preview(usize),
     Thumb(usize),
+    Grid(usize),
     Conflict { incoming: bool },
 }
 
@@ -52,6 +54,7 @@ fn parse(path: &str) -> Option<(u64, Route)> {
     let req = match kind {
         "preview" => Route::Preview(arg.parse().ok()?),
         "thumb" => Route::Thumb(arg.parse().ok()?),
+        "grid" => Route::Grid(arg.parse().ok()?),
         "conflict" => Route::Conflict {
             incoming: match arg {
                 "incoming" => true,
@@ -70,7 +73,7 @@ fn serve(state: &AppState, path: &str) -> Result<Encoded, String> {
         let guard = state.session();
         let s = guard.as_ref().filter(|s| s.generation == generation).ok_or("古い画面からの要求です")?;
         match req {
-            Route::Preview(i) | Route::Thumb(i) => {
+            Route::Preview(i) | Route::Thumb(i) | Route::Grid(i) => {
                 let item = s.session.items().get(i).ok_or("画像が見つかりません")?;
                 (Some(item.path.clone()), location(&item.path, &item.status).to_path_buf())
             }
@@ -81,6 +84,18 @@ fn serve(state: &AppState, path: &str) -> Result<Encoded, String> {
         }
     };
     match key {
+        // 一覧のサムネイルは専用のキャッシュに入れ、先読みした画像を押し出さない。
+        // 同時に大量に要求されるので、デコードの数を制限する（同じ画像の重複要求はキャッシュ側で待つ）
+        // 順番を待つ間に振り分けられることがあるので、デコードの直前に今ある場所を引き直す
+        Some(key) if matches!(req, Route::Grid(_)) => {
+            let thumb = state.grid_cache.get_or_load(&key, || {
+                state.grid_limit.run(|| {
+                    let file = current_location(state, &key).unwrap_or(file);
+                    decoder::make_grid_thumb(&state.registry, &file)
+                })
+            })?;
+            Ok((*thumb).clone())
+        }
         // 仕分け対象の画像はキャッシュ（先読み）を使う
         Some(key) => {
             let preview = state.cache.get_or_load(&key, || decoder::make_preview(&state.registry, &file))?;
@@ -91,6 +106,13 @@ fn serve(state: &AppState, path: &str) -> Result<Encoded, String> {
     }
 }
 
+/// 元の場所が `original` の画像が今ある場所（仕分け元を読み直していたら `None`）
+fn current_location(state: &AppState, original: &Path) -> Option<PathBuf> {
+    let guard = state.session();
+    let item = guard.as_ref()?.session.items().iter().find(|i| i.path == original)?;
+    Some(location(&item.path, &item.status).to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,6 +120,7 @@ mod tests {
     #[test]
     fn parses_urls() {
         assert!(matches!(parse("/preview/3/12"), Some((3, Route::Preview(12)))));
+        assert!(matches!(parse("/grid/1/4"), Some((1, Route::Grid(4)))));
         assert!(matches!(parse("/thumb/1/0"), Some((1, Route::Thumb(0)))));
         assert!(matches!(parse("/conflict/2/existing"), Some((2, Route::Conflict { incoming: false }))));
         assert!(parse("/preview/x/1").is_none());
@@ -142,6 +165,56 @@ mod tests {
     }
 
     #[test]
+    fn serves_grid_thumbnail_from_its_own_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_with_session(dir.path());
+        assert_eq!(size(&serve(&state, "/grid/1/0").unwrap()), (300, 200), "480px より小さい画像はそのまま");
+        assert!(state.grid_cache.contains(&dir.path().join("a.png")));
+        assert!(!state.cache.contains(&dir.path().join("a.png")), "先読み用のキャッシュは押し出さない");
+        assert!(serve(&state, "/grid/2/0").unwrap_err().contains("古い画面"));
+        assert!(serve(&state, "/grid/1/9").unwrap_err().contains("見つかりません"));
+    }
+
+    #[test]
+    fn grid_thumbnail_reads_where_the_image_is_when_its_turn_comes() {
+        use std::sync::mpsc;
+        let dir = tempfile::tempdir().unwrap();
+        let state = Arc::new(state_with_session(dir.path()));
+        let target = dir.path().join("t");
+        std::fs::create_dir(&target).unwrap();
+        // デコードの枠をすべて埋め、一覧の要求を待たせる
+        let (release, wait) = mpsc::channel::<()>();
+        let wait = Arc::new(std::sync::Mutex::new(wait));
+        let (started_tx, started) = mpsc::channel();
+        let blockers: Vec<_> = (0..3)
+            .map(|_| {
+                let (state, wait, started_tx) = (state.clone(), wait.clone(), started_tx.clone());
+                std::thread::spawn(move || {
+                    state.grid_limit.run(|| {
+                        started_tx.send(()).unwrap();
+                        wait.lock().unwrap().recv().unwrap();
+                    })
+                })
+            })
+            .collect();
+        for _ in 0..3 {
+            started.recv().unwrap();
+        }
+        let s = state.clone();
+        let request = std::thread::spawn(move || serve(&s, "/grid/1/0").map(|e| size(&e)));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        // 待っている間に画像を振り分ける
+        state.session().as_mut().unwrap().session.apply(Action::MoveTo { dir: target, label: "t".into() }).unwrap();
+        for _ in 0..3 {
+            release.send(()).unwrap();
+        }
+        for b in blockers {
+            b.join().unwrap();
+        }
+        assert_eq!(request.join().unwrap(), Ok((300, 200)), "移動先から読む");
+    }
+
+    #[test]
     fn rejects_stale_or_unknown_requests() {
         let dir = tempfile::tempdir().unwrap();
         let state = state_with_session(dir.path());
@@ -167,6 +240,7 @@ mod tests {
             .unwrap();
         assert!(!dir.path().join("a.png").exists());
         assert_eq!(size(&serve(&state, "/preview/1/0").unwrap()), (300, 200));
+        assert_eq!(size(&serve(&state, "/grid/1/0").unwrap()), (300, 200));
 
         write_dummy(&target.join("b.png"), 50, 40);
         state.session().as_mut().unwrap().session.apply(Action::MoveTo { dir: target, label: "t".into() }).unwrap();
