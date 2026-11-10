@@ -227,6 +227,27 @@ describe("類似画像", () => {
     press("Escape");
   });
 
+  it("Space で比較表示にし、ホイールで拡大する（既定のスクロールは止める）。一覧ではホイールを止めない", async () => {
+    await openByKey();
+    const wheel = () => {
+      const e = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    expect(wheel()).toBe(false);
+    expect(press("Space")).toBe(true);
+    expect(root().querySelector<HTMLElement>('[data-slot="similar-compare"]')!.hidden).toBe(false);
+    expect(wheel()).toBe(true);
+    expect(root().querySelector<HTMLElement>(".compare-pane img")!.style.transform).toContain("scale(1.5)");
+    expect(press("Tab")).toBe(true);
+    expect(root().querySelectorAll(".compare-pane")).toHaveLength(1);
+    press("Escape");
+    expect(store.screen).toBe("similar");
+    press("Escape");
+    expect(store.screen).toBe("sort");
+    expect(commands()).not.toContain("perform");
+  });
+
   it("確認画面の写しがなければ仕分け画面を出す", async () => {
     store.screen = "similar";
     store.similar = null;

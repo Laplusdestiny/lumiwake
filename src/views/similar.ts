@@ -6,6 +6,7 @@ import { displayCombo } from "../keys";
 import { notify, store } from "../store";
 import { toast } from "../toast";
 import { esc, formatBytes, formatCount, icons } from "../util";
+import { NO_ZOOM, clampPan, compareWindow, stepZoom, zoomTransform, type Zoom } from "./similarCompare";
 
 /** 閾値はハッシュの違うビット数（0〜64）で持つ。小さいほど厳しい */
 export const THRESHOLD_DEFAULT = 6;
@@ -61,6 +62,16 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let revealSelection = false;
 /** 描いたときのグループと絞り込み。変わったときだけ作り直す */
 let built: { groups: object; filter: Filter } | null = null;
+
+/** 比較表示（選択中のグループを大きく並べる）。null なら一覧。side: 並べる / flip: 1 枚ずつ切り替える */
+let compare: "side" | "flip" | null = null;
+let zoom: Zoom = NO_ZOOM;
+/** 比較表示に描いた内容。変わったときだけ作り直す */
+let builtCompare: { key: string; members: number[] } | null = null;
+
+const ZOOM_IN = new Set(["Ctrl+Equal", "Ctrl+Shift+Equal", "Ctrl+Semicolon", "Ctrl+Shift+Semicolon", "Ctrl+NumAdd"]);
+const ZOOM_OUT = new Set(["Ctrl+Minus", "Ctrl+NumSubtract"]);
+const ZOOM_RESET = new Set(["Ctrl+0", "Ctrl+Num0"]);
 
 /** 絞り込み後のグループ。画面を開いているときだけ呼ぶ */
 function visible(): SimilarGroup[] {
@@ -118,6 +129,7 @@ export function openSimilar(): Promise<void> {
     }
     filter = "all";
     built = null;
+    compare = null;
     selected = store.similar.groups.flatMap((g) => g.members).find((m) => m.current)?.index ?? null;
     reselect(null);
     revealSelection = true;
@@ -133,6 +145,8 @@ export function closeSimilar(): void {
   timer = null;
   store.similar = null;
   built = null;
+  compare = null;
+  builtCompare = null;
   store.screen = "sort";
   notify();
 }
@@ -203,10 +217,22 @@ function skeleton(): string {
       <span>${esc(displayCombo(k.delete))} 削除</span>
       <span>${esc(displayCombo(k.keep_only))} これだけ残す</span>
       <span>${esc(displayCombo(k.undo))} 取り消し</span>
+      <span>Space 拡大して比較</span>
       <span>Enter 1 枚表示で開く</span>
     </div>
     <div class="similar-scroll" data-slot="similar-scroll" tabindex="-1">
       <div class="similar-groups" data-slot="similar-groups"></div>
+    </div>
+    <div class="similar-compare" data-slot="similar-compare" tabindex="-1" hidden>
+      <div class="compare-bar">
+        <span class="compare-title" data-slot="compare-title"></span>
+        <span class="muted small">← → 画像　↑ ↓ グループ　Tab 並べる／切り替える　ホイール 拡大（ドラッグで移動、Ctrl+0 で戻す）</span>
+        <div class="grow"></div>
+        <span class="compare-zoom" data-slot="compare-zoom"></span>
+        <button class="btn btn-sm" data-action="similar-compare-mode" data-slot="compare-mode"></button>
+        <button class="btn btn-sm" data-action="similar-compare-close" title="グループの一覧に戻る（Esc / Space）">一覧に戻る</button>
+      </div>
+      <div class="compare-panes" data-slot="compare-panes"></div>
     </div>
   </div>`;
 }
@@ -221,16 +247,24 @@ function badgesHtml(g: SimilarGroup): string {
   return labels.map((l) => `<span class="similar-badge">${esc(l)}</span>`).join("");
 }
 
-function tileHtml(m: SimilarMember, generation: number): string {
-  const k = store.config!.config.keys;
-  const marks = [m.largestResolution && "解像度が最大", m.largestSize && "サイズが最大", m.current && "現在の画像"]
+function marksHtml(m: SimilarMember): string {
+  return [m.largestResolution && "解像度が最大", m.largestSize && "サイズが最大", m.current && "現在の画像"]
     .filter(Boolean)
     .map((l) => `<span class="similar-mark">${esc(l)}</span>`)
     .join("");
+}
+
+function metaText(m: SimilarMember): string {
+  return `${m.width}×${m.height}・${formatBytes(m.size)}・類似度 ${m.similarity}%`;
+}
+
+function tileHtml(m: SimilarMember, generation: number): string {
+  const k = store.config!.config.keys;
+  const marks = marksHtml(m);
   return `<div class="similar-tile" data-action="similar-select" data-index="${m.index}" role="option" aria-selected="false" title="${esc(m.name)}">
       <span class="similar-thumb"><img src="${lumiUrl(`grid/${generation}/${m.index}`)}" alt="" loading="lazy" decoding="async"></span>
       <span class="similar-name">${esc(m.name)}</span>
-      <span class="similar-meta">${m.width}×${m.height}・${esc(formatBytes(m.size))}・類似度 ${m.similarity}%</span>
+      <span class="similar-meta">${esc(metaText(m))}</span>
       <span class="similar-marks">${marks}</span>
       <span class="similar-actions">
         <button class="btn btn-sm" data-action="similar-delete" data-index="${m.index}" title="この画像を削除予定にする（${esc(displayCombo(k.delete))}）">削除</button>
@@ -259,6 +293,8 @@ function buildGroups(root: HTMLElement): void {
           <header class="similar-group-head">
             <span class="similar-group-title">グループ ${i + 1}・${g.members.length} 枚</span>
             ${badgesHtml(g)}
+            <div class="grow"></div>
+            <button class="btn btn-sm" data-action="similar-compare" data-index="${g.members[0].index}" title="このグループの画像を大きく並べて見比べる（Space）">拡大して比較</button>
           </header>
           <div class="similar-tiles">${g.members.map((m) => tileHtml(m, sim.generation)).join("")}</div>
         </section>`,
@@ -307,6 +343,8 @@ export function renderSimilar(root: HTMLElement): void {
     root.innerHTML = skeleton();
     root.dataset.view = "similar";
     built = null;
+    builtCompare = null;
+    initDrag(root);
   }
   const slot = (name: string) => root.querySelector<HTMLElement>(`[data-slot="${name}"]`)!;
   root.querySelector<HTMLInputElement>('[data-similar="threshold"]')!.value = String(threshold);
@@ -318,7 +356,129 @@ export function renderSimilar(root: HTMLElement): void {
   // 判定中かどうかで文言が変わる（グループがまだないとき）
   const empty = root.querySelector(".similar-empty");
   if (empty) empty.textContent = emptyText();
+  renderCompare();
   updateSelection();
+}
+
+// ---- 比較表示 ----
+
+/**
+ * 比較表示を描く。並べる画像と表示の種類が変わったときだけ枠を作り直し、
+ * 選択や拡大だけが変わったときは印と transform を書き換える（画像を読み直さない）
+ */
+function renderCompare(): void {
+  const root = rootEl!;
+  const slot = (name: string) => root.querySelector<HTMLElement>(`[data-slot="${name}"]`)!;
+  const pos = compare ? position(selected) : null;
+  // 見るグループがなくなったら一覧に戻る
+  if (!pos) compare = null;
+  const pane = slot("similar-compare");
+  pane.hidden = !compare;
+  slot("similar-scroll").hidden = !!compare;
+  if (!compare || !pos) {
+    builtCompare = null;
+    return;
+  }
+  const sim = store.similar!;
+  const groups = visible();
+  const members = groups[pos.group].members;
+  // 別のグループへ移ったら全体表示に戻す（同じグループの中では、同じ場所を見比べられるよう保つ）
+  const ids = members.map((m) => m.index);
+  if (builtCompare && !builtCompare.members.some((i) => ids.includes(i))) zoom = NO_ZOOM;
+
+  const [start, end] = compare === "flip" ? [pos.member, pos.member + 1] : compareWindow(members.length, pos.member);
+  const shown = members.slice(start, end);
+  const key = `${compare}|${sim.generation}|${JSON.stringify(shown)}`;
+  if (builtCompare?.key !== key) {
+    const panes = slot("compare-panes");
+    panes.innerHTML = shown
+      .map(
+        (m) => `<figure class="compare-pane" data-action="similar-select" data-index="${m.index}">
+          <div class="compare-stage"><img src="${lumiUrl(`preview/${sim.generation}/${m.index}`)}" alt="" draggable="false" decoding="async"></div>
+          <figcaption>
+            <span class="similar-name">${esc(m.name)}</span>
+            <span class="similar-meta">${esc(metaText(m))}</span>
+            <span class="similar-marks">${marksHtml(m)}</span>
+          </figcaption>
+        </figure>`,
+      )
+      .join("");
+    panes.querySelectorAll("img").forEach((img) =>
+      img.addEventListener("error", () => (img.parentElement!.innerHTML = icons.image), { once: true }),
+    );
+  }
+  builtCompare = { key, members: ids };
+  pane.dataset.mode = compare;
+  slot("compare-title").textContent =
+    `グループ ${pos.group + 1} / ${groups.length}・${pos.member + 1} / ${members.length} 枚目`;
+  slot("compare-mode").textContent = compare === "flip" ? "並べて表示" : "1 枚ずつ切り替える";
+  slot("compare-mode").title = "並べて表示／1 枚ずつ切り替える（Tab）";
+  pane.querySelectorAll<HTMLElement>(".compare-pane").forEach((el) => {
+    el.classList.toggle("is-selected", Number(el.dataset.index) === selected);
+  });
+  applyZoom();
+}
+
+/** 並べた画像すべてに、同じ倍率と位置を当てる */
+function applyZoom(): void {
+  const root = rootEl!;
+  const transform = zoomTransform(zoom);
+  root.querySelectorAll<HTMLElement>(".compare-pane img").forEach((img) => (img.style.transform = transform));
+  root.querySelector<HTMLElement>('[data-slot="compare-zoom"]')!.textContent = `${Math.round(zoom.scale * 100)}%`;
+  root.querySelector<HTMLElement>('[data-slot="similar-compare"]')!.classList.toggle("is-zoomed", zoom.scale > 1);
+}
+
+function setZoom(scale: number): void {
+  zoom = { scale, x: clampPan(zoom.x, scale), y: clampPan(zoom.y, scale) };
+  applyZoom();
+}
+
+/** 拡大中の画像を動かす。dx / dy は枠の大きさに対する割合 */
+export function panCompare(dx: number, dy: number): void {
+  if (!compare) return;
+  zoom = { scale: zoom.scale, x: clampPan(zoom.x + dx, zoom.scale), y: clampPan(zoom.y + dy, zoom.scale) };
+  applyZoom();
+}
+
+function setCompare(mode: "side" | "flip" | null): void {
+  if (mode && !position(selected)) return;
+  if (!compare && mode) zoom = NO_ZOOM;
+  compare = mode;
+  // 一覧に戻ったときは、選択中の画像が見える位置にする
+  if (!mode) revealSelection = true;
+  renderCompare();
+  updateSelection();
+  rootEl?.querySelector<HTMLElement>(`[data-slot="${mode ? "similar-compare" : "similar-scroll"}"]`)?.focus({
+    preventScroll: true,
+  });
+}
+
+/** 比較表示でのホイール: 拡大・縮小する。処理したら true */
+export function handleSimilarWheel(e: Pick<WheelEvent, "deltaY">): boolean {
+  if (!compare || e.deltaY === 0) return false;
+  setZoom(stepZoom(zoom.scale, e.deltaY < 0 ? 1 : -1));
+  return true;
+}
+
+/** 比較表示でのドラッグ: 拡大中の画像を動かす */
+function initDrag(root: HTMLElement): void {
+  const area = root.querySelector<HTMLElement>('[data-slot="compare-panes"]')!;
+  let last: { x: number; y: number } | null = null;
+  area.addEventListener("pointerdown", (e) => {
+    if (zoom.scale > 1) last = { x: e.clientX, y: e.clientY };
+  });
+  area.addEventListener("pointermove", (e) => {
+    if (!last) return;
+    const stage = area.querySelector<HTMLElement>(".compare-stage");
+    const w = stage?.clientWidth || 1;
+    const h = stage?.clientHeight || 1;
+    panCompare((e.clientX - last.x) / w, (e.clientY - last.y) / h);
+    last = { x: e.clientX, y: e.clientY };
+  });
+  const stop = () => (last = null);
+  area.addEventListener("pointerup", stop);
+  area.addEventListener("pointerleave", stop);
+  area.addEventListener("pointercancel", stop);
 }
 
 // ---- 操作 ----
@@ -422,6 +582,7 @@ function moveSelection(combo: string): boolean {
   const g = groups[Math.min(lastGroup, Math.max(0, group))];
   selected = g.members[Math.min(g.members.length - 1, Math.max(0, member))].index;
   revealSelection = true;
+  renderCompare();
   updateSelection();
   return true;
 }
@@ -430,7 +591,17 @@ function moveSelection(combo: string): boolean {
 export function handleSimilarKey(combo: string, e: Pick<KeyboardEvent, "repeat">): boolean {
   if (!store.similar) return false;
   const k = store.config!.config.keys;
-  if (combo === "Escape" || combo === k.toggle_similar) return closeSimilar(), true;
+  if (combo === k.toggle_similar) return closeSimilar(), true;
+  if (compare) {
+    if (combo === "Escape" || combo === "Space") return setCompare(null), true;
+    if (combo === "Tab") return setCompare(compare === "side" ? "flip" : "side"), true;
+    if (ZOOM_IN.has(combo)) return setZoom(stepZoom(zoom.scale, 1)), true;
+    if (ZOOM_OUT.has(combo)) return setZoom(stepZoom(zoom.scale, -1)), true;
+    if (ZOOM_RESET.has(combo)) return ((zoom = NO_ZOOM), applyZoom()), true;
+  } else {
+    if (combo === "Escape") return closeSimilar(), true;
+    if (combo === "Space") return setCompare("side"), true;
+  }
   if (combo === k.delete || combo === k.keep_only || combo === k.undo) {
     // 押しっぱなしや処理待ちの間に、続けて削除しない
     if (e.repeat || actions.busy()) return true;
@@ -447,6 +618,7 @@ export function handleSimilarKey(combo: string, e: Pick<KeyboardEvent, "repeat">
 function select(index: number): void {
   if (!memberOf(index)) return;
   selected = index;
+  renderCompare();
   updateSelection();
 }
 
@@ -458,7 +630,18 @@ export function handleSimilarAction(action: string, el: HTMLElement): boolean {
       return true;
     case "similar-select":
       select(index);
-      focusList();
+      if (!compare) focusList();
+      return true;
+    case "similar-compare":
+      // 選択中の画像がそのグループになければ、先頭の画像を選ぶ
+      if (memberOf(index)?.group !== memberOf(selected)?.group) select(index);
+      setCompare("side");
+      return true;
+    case "similar-compare-mode":
+      if (compare) setCompare(compare === "side" ? "flip" : "side");
+      return true;
+    case "similar-compare-close":
+      setCompare(null);
       return true;
     // ボタンを押した画像を選んでから処理する（処理のあと、その近くの画像が選ばれる）
     case "similar-delete":

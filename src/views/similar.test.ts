@@ -520,6 +520,215 @@ describe("スクロール位置", () => {
   });
 });
 
+describe("比較表示", () => {
+  const panes = () => [...root.querySelectorAll<HTMLElement>(".compare-pane")].map((p) => Number(p.dataset.index));
+  const selectedPane = () => Number(root.querySelector<HTMLElement>(".compare-pane.is-selected")?.dataset.index ?? NaN);
+  const comparing = () => !slot("similar-compare")!.hidden;
+  const transforms = () => [...root.querySelectorAll<HTMLElement>(".compare-pane img")].map((i) => i.style.transform);
+  const wheel = (deltaY: number) => v.handleSimilarWheel({ deltaY });
+
+  /** 5 枚のグループ（番号 1, 2, 4, 8, 9）と 2 枚のグループ */
+  function five(): SimilarGroups {
+    const g = makeSimilarGroups();
+    const base = g.groups[0].members[2];
+    g.groups[0].members.push({ ...base, index: 8, name: "h.jpg" }, { ...base, index: 9, name: "i.jpg" });
+    return g;
+  }
+
+  it("Space で選択中のグループを並べて表示し、Space か Esc でグループの一覧に戻る", async () => {
+    await open();
+    expect(comparing()).toBe(false);
+    expect(key("Space")).toBe(true);
+    expect(comparing()).toBe(true);
+    expect(slot("similar-scroll")!.hidden).toBe(true);
+    expect(panes()).toEqual([1, 2, 4]);
+    expect(selectedPane()).toBe(2);
+    expect(root.querySelector(".compare-pane img")!.getAttribute("src")).toBe("lumi://localhost/preview/1/1");
+    expect(clean(slot("compare-title"))).toBe("グループ 1 / 2・2 / 3 枚目");
+    const info = clean(root.querySelector('.compare-pane[data-index="1"] figcaption'));
+    expect(info).toContain("a.jpg");
+    expect(info).toContain("800×600・2.0 KB・類似度 97%");
+    expect(info).toContain("解像度が最大");
+
+    expect(key("Escape")).toBe(true);
+    expect(comparing()).toBe(false);
+    expect(store.screen).toBe("similar"); // 画面は閉じない
+    expect(selected()).toBe(2);
+    key("Space");
+    key("Space");
+    expect(comparing()).toBe(false);
+  });
+
+  it("グループがなければ比較表示にしない", async () => {
+    await open(makeSimilarGroups({ groups: [] }));
+    expect(key("Space")).toBe(true);
+    expect(comparing()).toBe(false);
+  });
+
+  it("グループ見出しの比較ボタンで、そのグループを開く", async () => {
+    await open();
+    const btn = root.querySelectorAll<HTMLElement>('[data-action="similar-compare"]')[1];
+    expect(v.handleSimilarAction("similar-compare", btn)).toBe(true);
+    expect(comparing()).toBe(true);
+    expect(panes()).toEqual([5, 7]);
+    expect(selectedPane()).toBe(5);
+    expect(v.handleSimilarAction("similar-compare-close", root)).toBe(true);
+    expect(comparing()).toBe(false);
+  });
+
+  it("← → で選択を送り、4 枚以上のグループでは並べる 3 枚がついてくる", async () => {
+    await open(five());
+    key("Home");
+    key("Space");
+    expect(panes()).toEqual([1, 2, 4]);
+    expect(selectedPane()).toBe(1);
+    key("Right");
+    key("Right");
+    expect(panes()).toEqual([2, 4, 8]);
+    expect(selectedPane()).toBe(4);
+    key("Right");
+    key("Right");
+    key("Right");
+    expect(panes()).toEqual([4, 8, 9]);
+    expect(selectedPane()).toBe(9);
+    expect(clean(slot("compare-title"))).toBe("グループ 1 / 2・5 / 5 枚目");
+  });
+
+  it("↑ ↓ で比較表示のまま前後のグループへ移る", async () => {
+    await open();
+    key("Space");
+    expect(key("Down")).toBe(true);
+    expect(comparing()).toBe(true);
+    expect(panes()).toEqual([5, 7]);
+    expect(clean(slot("compare-title"))).toBe("グループ 2 / 2・2 / 2 枚目");
+    key("Up");
+    expect(panes()).toEqual([1, 2, 4]);
+  });
+
+  it("Tab で 1 枚ずつ切り替える表示にし、← → で同じ場所の画像を入れ替える", async () => {
+    await open();
+    key("Space");
+    expect(key("Tab")).toBe(true);
+    expect(panes()).toEqual([2]);
+    expect(slot("similar-compare")!.dataset.mode).toBe("flip");
+    key("Right");
+    expect(panes()).toEqual([4]);
+    key("Left");
+    key("Left");
+    expect(panes()).toEqual([1]);
+    key("Tab");
+    expect(panes()).toEqual([1, 2, 4]);
+    expect(v.handleSimilarAction("similar-compare-mode", root)).toBe(true);
+    expect(panes()).toEqual([1]);
+  });
+
+  it("ホイールと Ctrl+= / Ctrl+- で、並べた画像を同じ倍率に拡大・縮小し、Ctrl+0 で戻す", async () => {
+    await open();
+    key("Space");
+    expect(transforms()).toEqual(Array(3).fill("translate(0%, 0%) scale(1)"));
+    expect(wheel(-100)).toBe(true);
+    expect(transforms()).toEqual(Array(3).fill("translate(0%, 0%) scale(1.5)"));
+    expect(key("Ctrl+Equal")).toBe(true);
+    expect(transforms()[0]).toBe("translate(0%, 0%) scale(2.25)");
+    expect(clean(slot("compare-zoom"))).toBe("225%");
+    expect(key("Ctrl+Minus")).toBe(true);
+    wheel(100);
+    expect(transforms()[2]).toBe("translate(0%, 0%) scale(1)");
+    wheel(-100);
+    expect(key("Ctrl+0")).toBe(true);
+    expect(transforms()[0]).toBe("translate(0%, 0%) scale(1)");
+  });
+
+  it("拡大中にドラッグすると、並べた画像が同じだけ動く（枠の外へは出ない）", async () => {
+    await open();
+    key("Space");
+    wheel(-100);
+    wheel(-100); // 2.25 倍
+    v.panCompare(0.2, -0.1);
+    expect(transforms()).toEqual(Array(3).fill("translate(20%, -10%) scale(2.25)"));
+    v.panCompare(5, 5);
+    expect(transforms()[1]).toBe("translate(62.5%, 62.5%) scale(2.25)");
+    // 画像を送っても倍率と位置はそのまま（同じ場所を見比べる）
+    key("Right");
+    expect(transforms()[0]).toBe("translate(62.5%, 62.5%) scale(2.25)");
+    // 別のグループへ移ったら全体表示に戻す
+    key("Down");
+    expect(transforms()[0]).toBe("translate(0%, 0%) scale(1)");
+  });
+
+  it("一覧表示のときは、ホイールとズームのキーを横取りしない", async () => {
+    await open();
+    expect(wheel(-100)).toBe(false);
+    expect(key("Ctrl+Equal")).toBe(false);
+    expect(key("Tab")).toBe(false);
+  });
+
+  it("比較表示のまま削除でき、残った画像を並べ直す", async () => {
+    await open();
+    key("Space");
+    api.deleteSimilar.mockResolvedValue({ view: makeSession(), message: null });
+    api.similarGroups.mockResolvedValue(without(2));
+    key("Delete");
+    await vi.waitFor(() => expect(panes()).toEqual([1, 4]));
+    expect(api.deleteSimilar).toHaveBeenCalledWith(1, 2);
+    expect(comparing()).toBe(true);
+    expect(selectedPane()).toBe(4);
+  });
+
+  it("これだけ残すでグループがなくなったら次のグループを比較し、グループが尽きたら一覧に戻る", async () => {
+    await open();
+    key("Space");
+    api.keepOnly.mockResolvedValue({ view: makeSession(), deleted: 2, error: null });
+    api.similarGroups.mockResolvedValue(without(1, 4));
+    key("Ctrl+Shift+K");
+    await vi.waitFor(() => expect(panes()).toEqual([5, 7]));
+    expect(comparing()).toBe(true);
+
+    api.keepOnly.mockResolvedValue({ view: makeSession(), deleted: 1, error: null });
+    api.similarGroups.mockResolvedValue(makeSimilarGroups({ groups: [] }));
+    key("Ctrl+Shift+K");
+    await vi.waitFor(() => expect(comparing()).toBe(false));
+    expect(clean(root.querySelector(".similar-empty"))).toBe("似た画像は見つかりませんでした");
+  });
+
+  it("判定中の取り直しで並べている画像が変わらなければ、描き直さず倍率も保つ", async () => {
+    vi.useFakeTimers();
+    await open(makeSimilarGroups(), makeSimilarStatus({ done: 2, total: 8, running: true }));
+    key("Space");
+    wheel(-100);
+    const before = root.querySelector(".compare-pane img");
+    api.similarStatus.mockResolvedValue(makeSimilarStatus({ done: 6, total: 8, running: true }));
+    const more = makeSimilarGroups();
+    more.groups.push({ ...more.groups[1], members: more.groups[1].members.map((m, i) => ({ ...m, index: 20 + i })) });
+    api.similarGroups.mockResolvedValue(more);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(root.querySelector(".compare-pane img")).toBe(before);
+    expect(transforms()[0]).toBe("translate(0%, 0%) scale(1.5)");
+    expect(clean(slot("compare-title"))).toBe("グループ 1 / 3・2 / 3 枚目");
+  });
+
+  it("比較表示で枠をクリックすると選択し、Enter で 1 枚表示を開く", async () => {
+    await open();
+    key("Space");
+    v.handleSimilarAction("similar-select", root.querySelector<HTMLElement>('.compare-pane[data-index="4"]')!);
+    expect(selectedPane()).toBe(4);
+    key("Enter");
+    expect(actions.jumpTo).toHaveBeenCalledWith(4);
+    expect(store.screen).toBe("sort");
+    // 開き直したら一覧から
+    await open();
+    expect(comparing()).toBe(false);
+  });
+
+  it("読めなかった画像の枠はアイコンを出す", async () => {
+    await open();
+    key("Space");
+    root.querySelector(".compare-pane img")!.dispatchEvent(new Event("error"));
+    expect(root.querySelector('.compare-pane[data-index="1"] img')).toBeNull();
+    expect(root.querySelector('.compare-pane[data-index="1"] svg')).not.toBeNull();
+  });
+});
+
 describe("閾値・絞り込み", () => {
   it("スライダーで閾値を変えるとグループを取り直し、値を保存する", async () => {
     await open();
@@ -606,8 +815,10 @@ describe("開く・閉じる", () => {
   it("振り分けキー・スキップは受け付けない", async () => {
     await open();
     expect(key("1")).toBe(false);
-    expect(key("Space")).toBe(false);
+    // Space（仕分け画面ではスキップ）は比較表示の切り替えで、画像には何もしない
+    expect(key("Space")).toBe(true);
     expect(store.screen).toBe("similar");
     expect(api.deleteSimilar).not.toHaveBeenCalled();
+    expect(api.keepOnly).not.toHaveBeenCalled();
   });
 });

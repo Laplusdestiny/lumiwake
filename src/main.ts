@@ -21,6 +21,7 @@ import {
   handleSimilarDblClick,
   handleSimilarInput,
   handleSimilarKey,
+  handleSimilarWheel,
   openSimilar,
   renderSimilar,
 } from "./views/similar";
@@ -197,6 +198,8 @@ window.addEventListener(
   "wheel",
   (e) => {
     if (store.screen === "grid" && handleGridWheel(e)) e.preventDefault();
+    // 類似画像の比較表示: ホイールで拡大・縮小する
+    if (store.screen === "similar" && handleSimilarWheel(e)) e.preventDefault();
   },
   { passive: false },
 );

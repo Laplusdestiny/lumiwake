@@ -83,15 +83,28 @@ Lumiwake only shows candidates. It never deletes anything on its own, and nothin
 | <kbd>Delete</kbd> | Mark the selected image for deletion |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> | **Keep only this** (keep the selected image and mark the rest of its group for deletion) |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | Undo (one image at a time) |
+| <kbd>Space</kbd> | **Compare enlarged** (show the selected group side by side, large; also a button in the group header) |
 | <kbd>Enter</kbd> | Open the selected image in the single-image view (or double-click it) |
 | <kbd>Esc</kbd> | Go back |
+
+**Compare enlarged** fills the window with the images of the selected group (for groups of four or more, three at a time around the selected image). The delete, keep-only and undo keys keep working.
+
+| Key | Action |
+| --- | --- |
+| <kbd>←</kbd> <kbd>→</kbd> | Step through the images of the group |
+| <kbd>↑</kbd> <kbd>↓</kbd> | Previous / next group, staying in the comparison |
+| <kbd>Tab</kbd> | Side by side ⇔ one at a time (images swap in place, which makes differences easy to spot) |
+| Wheel / <kbd>Ctrl</kbd>+<kbd>=</kbd> <kbd>Ctrl</kbd>+<kbd>-</kbd> | Zoom in / out. All shown images zoom and move together |
+| Drag | Move the zoomed images |
+| <kbd>Ctrl</kbd>+<kbd>0</kbd> | Back to the whole image |
+| <kbd>Esc</kbd> / <kbd>Space</kbd> | Back to the list of groups |
 
 - **Similarity is judged from the image content.** Resized or recompressed copies, copies with noise, and copies with a mark in a corner end up in the same group. Photos with a clearly different framing, and cropped or rotated copies, are not detected
 - The slider at the top sets how similar images must be to share a group (75–100%). The value is remembered
 - Each group shows its evidence: **Identical** (the files are byte-for-byte the same), **Same size**, **Same resolution**, **Similar names** (`a.jpg` and `a (1).jpg`, consecutive numbers, …). You can also filter the groups by evidence
 - Each image shows "largest resolution" / "largest size" marks and its similarity to the closest image in the group, to help you decide which one to keep
 - Deleting here works like the delete key: the file is moved to the delete folder, or marked for deletion in place. Files are only deleted for good after you confirm when quitting
-- Only images you have not sorted yet (including skipped ones) are compared. The first time you open the view every image has to be read, so it takes a moment (progress is shown at the top)
+- Only images you have not sorted yet (including skipped ones) are compared. The first time you open the view every image has to be read, so it takes a moment (progress is shown at the top). You can already review and delete the groups found so far while it runs
 
 ## 4. When a file with the same name exists
 
