@@ -37,6 +37,7 @@ Recently used folders (up to 10) are listed on the start screen; pick one by cli
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | Toggle sidebar / full-screen view |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> | Show / hide folder paths in the destination list (also a button above the list) |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> | Open / close the grid view (also a button at the top) |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> | Open / close the similar-images view (also a button at the top) |
 | <kbd>Esc</kbd> | Leave full-screen / close dialogs |
 | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | Quit |
 
@@ -68,6 +69,29 @@ When the source folder holds many images and you are looking for one of them, pr
 - The slider at the top changes the thumbnail size freely, and the size is kept for next time
 - Images you have already sorted are shown dimmed, labeled with their destination (such as “→風景”) or “削除予定” (marked for deletion). They cannot be opened; undo with <kbd>Ctrl</kbd>+<kbd>Z</kbd> to sort them again
 - The sorting, delete and skip keys do nothing in the grid view
+
+### Similar images
+
+If you saved the same image twice, or took several nearly identical shots, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> (or the similar-images button at the top) to see the look-alike images in the source folder, group by group. You can mark the ones you don't need for deletion before you start sorting.
+
+Lumiwake only shows candidates. It never deletes anything on its own, and nothing is pre-selected.
+
+| Key (default) | Action |
+| --- | --- |
+| <kbd>←</kbd> <kbd>→</kbd> | Select an image within the group |
+| <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Home</kbd> <kbd>End</kbd> | Previous / next group, first / last group |
+| <kbd>Delete</kbd> | Mark the selected image for deletion |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> | **Keep only this** (keep the selected image and mark the rest of its group for deletion) |
+| <kbd>Ctrl</kbd>+<kbd>Z</kbd> | Undo (one image at a time) |
+| <kbd>Enter</kbd> | Open the selected image in the single-image view (or double-click it) |
+| <kbd>Esc</kbd> | Go back |
+
+- **Similarity is judged from the image content.** Resized or recompressed copies, copies with noise, and copies with a mark in a corner end up in the same group. Photos with a clearly different framing, and cropped or rotated copies, are not detected
+- The slider at the top sets how similar images must be to share a group (75–100%). The value is remembered
+- Each group shows its evidence: **Identical** (the files are byte-for-byte the same), **Same size**, **Same resolution**, **Similar names** (`a.jpg` and `a (1).jpg`, consecutive numbers, …). You can also filter the groups by evidence
+- Each image shows "largest resolution" / "largest size" marks and its similarity to the closest image in the group, to help you decide which one to keep
+- Deleting here works like the delete key: the file is moved to the delete folder, or marked for deletion in place. Files are only deleted for good after you confirm when quitting
+- Only images you have not sorted yet (including skipped ones) are compared. The first time you open the view every image has to be read, so it takes a moment (progress is shown at the top)
 
 ## 4. When a file with the same name exists
 

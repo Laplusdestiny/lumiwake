@@ -34,7 +34,7 @@
 
 - 画像をデコードし、グレースケールの 9×8 に縮める。各行で隣り合う画素の大小を比べ、8×8＝64 ビットにする
 - 2 枚の距離はハミング距離（違うビットの数、0〜64）。類似度は `1 − 距離/64` を百分率にして表示する
-- 閾値は距離で持つ。既定 6（類似度 90% 以上）、範囲 0〜16（100%〜75%）
+- 閾値は距離で持つ。既定 6、範囲 0〜16（100%〜75%）。画面には計算した類似度を出すので、既定値は「類似度 91% 以上」と表示される（90% は距離 6.4 にあたる）
 - 依存クレートは増やさない（`image` クレートの縮小と自前のビット演算）
 
 合成画像 40 種類での距離の実測（設計時の確認、中央値／最大）:
@@ -106,7 +106,7 @@ pub fn group(candidates: &[Candidate], max_distance: u32, same_bytes: impl Fn(&P
 - ワーカースレッド（`available_parallelism` を 1〜3 に丸めた数）が順にデコードし、ハッシュ・解像度・ファイルサイズを表に入れる。デコードは既存の `Registry::decode`
 - 読めない・デコードできない画像は失敗として表に入れ、グループには含めない（件数を画面に出す）
 - `start_session` で表を空にし、進行中の走査を中止する（ワーカーは 1 枚ごとに `generation` と中止フラグを見る）。古い走査の結果は表に入れない
-- 並び順の変更（`reorder_open`）で画像の番号が変わっても、表のキーはパスなので使い続けられる
+- 並び順の変更（`reorder_open`）で画像の番号が変わっても、表のキーはパスなので結果は使い続ける（待ちの分だけ捨て、次に画面を開いたときに続きを走査する）
 
 ### ファイル操作（`fileops/session.rs`）
 
@@ -127,8 +127,8 @@ pub fn group(candidates: &[Candidate], max_distance: u32, same_bytes: impl Fn(&P
 | `start_similar_scan()` | 走査を始める（すでに進行中なら何もしない）。`SimilarStatus` を返す |
 | `similar_status()` | `{ generation, done, total, running, failed }` |
 | `similar_groups(max_distance)` | 表にある分だけでグループを作って返す（走査の途中でも呼べる）。`max_distance` は 0〜16 に丸める |
-| `delete_similar(index)` | `delete_at(index, Similar)`。`ActionResult` を返す |
-| `keep_only(keep, others)` | `others` を順に `delete_at`。`KeepOnlyResult { view, deleted, error }` を返す |
+| `delete_similar(generation, index)` | `delete_at(index, Similar)`。`ActionResult` を返す |
+| `keep_only(generation, keep, others)` | `others` を順に `delete_at`。`KeepOnlyResult { view, deleted, error }` を返す |
 
 ```ts
 interface SimilarMember {
@@ -144,6 +144,7 @@ interface SimilarGroups { generation: number; groups: SimilarGroup[] }
 
 - `similar_groups` の対象は、その時点で未処理・保留の画像だけ。削除・移動した画像は次の呼び出しで外れ、1 枚になったグループは消える
 - `keep_only` は、`keep` と `others` がすべて未処理・保留で重複がなく、`keep` が `others` に含まれないことを先に確かめる（1 つでも違えば何もせずエラー）。途中の 1 枚で失敗したらそこで止め、そこまでの枚数（`deleted`）と失敗の理由（`error`）を返す。すでに削除予定にした分はそのまま（取り消しで戻せる）
+- `delete_similar` と `keep_only` は、画面が持っている番号が古くないかを `generation` で先に確かめる（設定で並び順を変えると画像の番号が変わる。古い番号で別の画像を削除予定にしない）
 - 削除のあとは既存の操作と同じく先読みを更新する
 
 ### 設定（`config/`）
