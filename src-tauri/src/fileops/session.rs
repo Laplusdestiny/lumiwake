@@ -221,7 +221,9 @@ impl Session {
                 // 仕分け元が振り分け先と同じフォルダの場合、画像はすでにそこにある。
                 // 自分自身との衝突として扱わず、ファイルは動かさずに振り分け済みにする
                 if in_dir(&self.items[idx].path, &dir) {
-                    let to = self.items[idx].path.clone();
+                    // 同じフォルダでも表記が違うことがある（Windows の短い名前・大文字小文字、リンクなど）。
+                    // 枚数の集計や一覧のラベルは振り分け先のパスで比べるので、振り分け先の表記で記録する
+                    let to = dir.join(file_name(&self.items[idx].path));
                     self.push(idx, Status::Moved { to }, format!("→ {label}（移動なし）"), None, None);
                     self.advance_from(idx);
                     return Ok(Outcome::Done);
@@ -789,6 +791,27 @@ mod tests {
         assert_eq!(listing(&e.src), ["img1.jpg", "img2.jpg"]);
         assert!(listing(&e.a).is_empty());
         assert!(listing(&e.trash).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_image_already_in_the_target_is_recorded_with_the_targets_spelling() {
+        // 設定の振り分け先と、読み込んだ画像のパスの表記が違っても（Windows の短い名前・大文字小文字、
+        // シンボリックリンクなど）同じフォルダなら、ファイルは動かさず、振り分け先の表記で記録する。
+        // 枚数の集計と一覧のラベルは、振り分け先のパスと移動先の親フォルダを比べるため
+        let (e, _) = env(0);
+        let image = e.a.join("photo.jpg");
+        fs::write(&image, "image").unwrap();
+        let alias = e.src.join("alias-of-a");
+        std::os::unix::fs::symlink(&e.a, &alias).unwrap();
+        let mut s = session(vec![image.clone()], None);
+        s.apply(move_to(&alias)).unwrap();
+        assert_eq!(s.items()[0].status, Status::Moved { to: alias.join("photo.jpg") });
+        assert_eq!(read(&image), "image", "ファイルは動かさない");
+        assert_eq!(listing(&e.a), ["photo.jpg"]);
+        s.undo().unwrap();
+        assert_eq!(s.items()[0].status, Status::Pending);
+        assert_eq!(read(&image), "image");
     }
 
     // ---- 同名ファイルの衝突 ----
