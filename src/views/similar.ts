@@ -321,41 +321,63 @@ function memberOf(index: number | null): { group: SimilarGroup; member: SimilarM
   return null;
 }
 
+/** 削除・これだけ残すを処理している数。処理中は次の削除操作を受け付けない */
+let pendingOps = 0;
+
+const CHANGED = "画像の一覧が変わりました。もう一度選んでください";
+
 /**
- * 画像 1 枚を削除予定にする。`index` を省くと、順番が来た時点で選択中の画像
- * （連打しても、前の操作のあとに選び直された画像に対して働く）
+ * 削除の操作を 1 つ、操作の列に並べる。対象（`indexes`）は押した時点で決め、順番が来たときに
+ * そのすべてがまだグループに出ていなければ何もしない（押したあとで選び直された画像や、
+ * 押した時点では見えていなかった画像を削除しないため）。処理中に押された次の操作は捨てる
  */
-function deleteOne(index?: number): Promise<void> {
-  return actions.enqueue(async () => {
-    const hit = memberOf(index ?? selected);
-    if (!hit || !store.similar) return;
-    try {
-      const r = await api.deleteSimilar(store.similar.generation, hit.member.index);
-      actions.setSession(r.view);
-      toast(`削除予定にしました: ${hit.member.name}`);
-    } catch (e) {
-      toast(errorText(e), "error");
-    }
-    await refresh();
+function runOp(indexes: number[], op: (generation: number) => Promise<void>): void {
+  const sim = store.similar;
+  if (!sim || pendingOps > 0) return;
+  const generation = sim.generation;
+  pendingOps++;
+  void actions
+    .enqueue(async () => {
+      if (store.similar !== sim || sim.generation !== generation) return;
+      if (!indexes.every((i) => memberOf(i))) {
+        toast(CHANGED);
+        return;
+      }
+      try {
+        await op(generation);
+      } catch (e) {
+        toast(errorText(e), "error");
+      }
+      await refresh();
+    })
+    .finally(() => {
+      pendingOps--;
+    });
+}
+
+/** 画像 1 枚を削除予定にする */
+function deleteOne(index: number | null): void {
+  const hit = memberOf(index);
+  if (!hit) return;
+  const { member } = hit;
+  runOp([member.index], async (generation) => {
+    const r = await api.deleteSimilar(generation, member.index);
+    actions.setSession(r.view);
+    toast(`削除予定にしました: ${member.name}`);
   });
 }
 
-/** 画像 1 枚を残し、同じグループの残りを削除予定にする */
-function keepOnly(index?: number): Promise<void> {
-  return actions.enqueue(async () => {
-    const hit = memberOf(index ?? selected);
-    if (!hit || !store.similar) return;
-    const keep = hit.member.index;
-    const others = hit.group.members.map((m) => m.index).filter((i) => i !== keep);
-    try {
-      const r = await api.keepOnly(store.similar.generation, keep, others);
-      actions.setSession(r.view);
-      if (r.error) toast(`${r.deleted} 枚を削除予定にしましたが、途中で失敗しました: ${r.error}`, "error");
-      else toast(`${r.deleted} 枚を削除予定にしました（取り消しで 1 枚ずつ戻せます）`);
-    } catch (e) {
-      toast(errorText(e), "error");
-    }
-    await refresh();
+/** 画像 1 枚を残し、いま表示している同じグループの残りを削除予定にする */
+function keepOnly(index: number | null): void {
+  const hit = memberOf(index);
+  if (!hit) return;
+  const keep = hit.member.index;
+  const others = hit.group.members.map((m) => m.index).filter((i) => i !== keep);
+  runOp([keep, ...others], async (generation) => {
+    const r = await api.keepOnly(generation, keep, others);
+    actions.setSession(r.view);
+    if (r.error) toast(`${r.deleted} 枚を削除予定にしましたが、途中で失敗しました: ${r.error}`, "error");
+    else toast(`${r.deleted} 枚を削除予定にしました（取り消しで 1 枚ずつ戻せます）`);
   });
 }
 
@@ -398,8 +420,8 @@ export function handleSimilarKey(combo: string, e: Pick<KeyboardEvent, "repeat">
     // 押しっぱなしや処理待ちの間に、続けて削除しない
     if (e.repeat || actions.busy()) return true;
     if (combo === k.undo) undo();
-    else if (combo === k.delete) void deleteOne();
-    else void keepOnly();
+    else if (combo === k.delete) deleteOne(selected);
+    else keepOnly(selected);
     return true;
   }
   if (combo === "Enter") return openItem(selected), true;
@@ -418,10 +440,10 @@ export function handleSimilarAction(action: string, el: HTMLElement): boolean {
       focusList();
       return true;
     case "similar-delete":
-      void deleteOne(index);
+      deleteOne(index);
       return true;
     case "similar-keep":
-      void keepOnly(index);
+      keepOnly(index);
       return true;
     default:
       return false;

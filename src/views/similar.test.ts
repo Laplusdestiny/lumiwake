@@ -348,15 +348,72 @@ describe("削除・これだけ残す・取り消し", () => {
     expect(actions.undo).not.toHaveBeenCalled();
   });
 
-  it("連打しても、取り直したあとのグループに対して 1 回ずつ処理する", async () => {
+  it("これだけ残すを続けて 2 回押しても、2 回目は何も削除しない", async () => {
     await open();
     api.keepOnly.mockResolvedValue({ view: makeSession(), deleted: 2, error: null });
     api.similarGroups.mockResolvedValue(without(1, 4));
     key("Ctrl+Shift+K");
+    expect(key("Ctrl+Shift+K")).toBe(true);
+    await vi.waitFor(() => expect(shown()).toEqual([[5, 7]]));
+    await actions.enqueue(async () => {});
+    // 1 回目のあとに選び直された別のグループの画像（7）には何もしない
+    expect(api.keepOnly.mock.calls).toEqual([[1, 2, [1, 4]]]);
+  });
+
+  it("削除キーを続けて 2 回押しても、選び直された隣の画像は削除しない", async () => {
+    await open();
+    api.deleteSimilar.mockResolvedValue({ view: makeSession(), message: null });
+    api.similarGroups.mockResolvedValue(without(2));
+    key("Delete");
+    expect(key("Delete")).toBe(true);
+    await vi.waitFor(() => expect(shown()[0]).toEqual([1, 4]));
+    await actions.enqueue(async () => {});
+    expect(api.deleteSimilar.mock.calls).toEqual([[1, 2]]);
+    // 処理が終われば、次の 1 回は受け付ける
+    api.similarGroups.mockResolvedValue(without(2, 4));
+    key("Delete");
+    await vi.waitFor(() => expect(api.deleteSimilar).toHaveBeenCalledTimes(2));
+    expect(api.deleteSimilar.mock.calls[1]).toEqual([1, 4]);
+  });
+
+  it("タイルのボタンを続けて押しても、処理中は次の操作を受け付けない", async () => {
+    await open();
+    api.keepOnly.mockResolvedValue({ view: makeSession(), deleted: 2, error: null });
+    api.deleteSimilar.mockResolvedValue({ view: makeSession(), message: null });
+    api.similarGroups.mockResolvedValue(without(1, 4));
+    v.handleSimilarAction("similar-keep", tile(2)!.querySelector<HTMLElement>('[data-action="similar-keep"]')!);
+    v.handleSimilarAction("similar-delete", tile(5)!.querySelector<HTMLElement>('[data-action="similar-delete"]')!);
+    await vi.waitFor(() => expect(shown()).toEqual([[5, 7]]));
+    await actions.enqueue(async () => {});
+    expect(api.keepOnly).toHaveBeenCalledTimes(1);
+    expect(api.deleteSimilar).not.toHaveBeenCalled();
+  });
+
+  it("押したあとにグループが増えても、押した時点で見えていた画像だけを削除予定にする", async () => {
+    await open();
+    // 閾値を動かした直後（取り直しが順番待ち）に「これだけ残す」を押す
+    const wider = makeSimilarGroups();
+    wider.groups[0].members.push({ ...wider.groups[0].members[2], index: 9, name: "later.jpg" });
+    api.similarGroups.mockResolvedValue(wider);
+    api.keepOnly.mockResolvedValue({ view: makeSession(), deleted: 2, error: null });
+    thresholdInput().value = "12";
+    v.handleSimilarInput(thresholdInput());
     key("Ctrl+Shift+K");
-    await vi.waitFor(() => expect(api.keepOnly).toHaveBeenCalledTimes(2));
-    // 2 回目は、1 回目のあとに選び直された次のグループの画像（7 を残して 5 を削除）
-    expect(api.keepOnly.mock.calls[1]).toEqual([1, 7, [5]]);
+    await vi.waitFor(() => expect(api.keepOnly).toHaveBeenCalledTimes(1));
+    expect(api.keepOnly).toHaveBeenCalledWith(1, 2, [1, 4]);
+  });
+
+  it("押したあとに対象の画像がグループから消えていたら、何もしない", async () => {
+    await open();
+    // 取り直しで、押した時点のグループの 1 枚（4）が消える
+    api.similarGroups.mockResolvedValue(without(4));
+    thresholdInput().value = "3";
+    v.handleSimilarInput(thresholdInput());
+    key("Ctrl+Shift+K");
+    await vi.waitFor(() => expect(shown()[0]).toEqual([1, 2]));
+    await actions.enqueue(async () => {});
+    expect(api.keepOnly).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith("画像の一覧が変わりました。もう一度選んでください");
   });
 
   it("取り消しキーで undo を呼び、グループを取り直す", async () => {
