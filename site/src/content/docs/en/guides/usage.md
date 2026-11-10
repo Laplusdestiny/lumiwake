@@ -17,7 +17,7 @@ Optionally set a delete folder under **一般** (General). See [Safety](/lumiwak
 
 ## 2. Load a source folder
 
-Choose the folder containing the images to sort and press **読み込んで開始** (<kbd>Enter</kbd>). You can include subfolders. Destination folders and the delete folder are excluded automatically. Images are shown in file-name order; to use modified time, capture time, or file size instead, change **一般 → 読み込み → 並び順** (General → Loading → Order).
+Choose the folder containing the images to sort and press **読み込んで開始** (<kbd>Enter</kbd>). You can include subfolders. Destination folders and the delete folder inside the source are excluded automatically, so images you already sorted don't show up again (if any destination folder was skipped, a notice tells you after loading). To re-sort images, or to check already-sorted images for look-alikes too, tick **振り分け先フォルダの画像も含める** (Include images in destination folders). The delete folder is never loaded. Images are shown in file-name order; to use modified time, capture time, or file size instead, change **一般 → 読み込み → 並び順** (General → Loading → Order).
 
 <img class="shot shot--narrow" src="/lumiwake/start-screen.webp" width="1282" height="832" loading="lazy" alt="The start screen: the source folder field with a Browse button, a list of recently used folders, an “include subfolders” checkbox, and the Load and start button" />
 

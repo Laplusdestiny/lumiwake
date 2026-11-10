@@ -12,6 +12,8 @@ let chosen: string | null = null;
  * 画面はフォルダを選ぶたびに描き直すので、チェックボックスの状態だけに持たせると元に戻ってしまう
  */
 let includeSubdirs: boolean | null = null;
+/** 同じく、利用者が切り替えた「振り分け先フォルダの画像も含める」 */
+let includeTargets: boolean | null = null;
 
 export function renderStart(root: HTMLElement): void {
   const cfg = store.config;
@@ -20,6 +22,7 @@ export function renderStart(root: HTMLElement): void {
   const source = chosen ?? g.source_dir ?? null;
   const hasTargets = cfg.config.targets.length > 0;
   const include = includeSubdirs ?? g.include_subdirs;
+  const targets = includeTargets ?? g.include_targets;
   root.dataset.view = "start";
   root.innerHTML = `
   <div class="start">
@@ -34,6 +37,7 @@ export function renderStart(root: HTMLElement): void {
       </div>
       ${renderRecent(g.recent_sources ?? [], source)}
       <label class="check"><input type="checkbox" id="include-subdirs" ${include ? "checked" : ""}> サブフォルダの画像も含める</label>
+      <label class="check check-sub" title="仕分け元の中にある振り分け先フォルダは、ふだんは読み込みません（振り分け済みの画像が出てこないように）。振り分け直しや、振り分け済みを含めた類似画像の確認をしたいときにチェックを入れます。削除フォルダは常に読み込みません"><input type="checkbox" id="include-targets" ${targets ? "checked" : ""} ${include ? "" : "disabled"}> 振り分け先フォルダの画像も含める</label>
       ${hasTargets ? "" : `<div class="notice">振り分け先がまだ登録されていません。<button class="link" data-action="settings">設定で登録</button>してから始めると便利です。</div>`}
       <div class="row gap end">
         ${store.session ? `<button class="btn" data-action="back-to-sort">仕分けに戻る</button>` : ""}
@@ -49,7 +53,13 @@ export function renderStart(root: HTMLElement): void {
     </div>
   </div>`;
   const box = root.querySelector<HTMLInputElement>("#include-subdirs")!;
-  box.addEventListener("change", () => (includeSubdirs = box.checked));
+  const targetsBox = root.querySelector<HTMLInputElement>("#include-targets")!;
+  box.addEventListener("change", () => {
+    includeSubdirs = box.checked;
+    // 振り分け先は、サブフォルダを読み込むときだけ対象になる
+    targetsBox.disabled = !box.checked;
+  });
+  targetsBox.addEventListener("change", () => (includeTargets = targetsBox.checked));
 }
 
 /** 最近使ったフォルダ。同名フォルダを区別できるよう、名前とパスを並べる */
@@ -113,10 +123,13 @@ export async function startFromForm(): Promise<void> {
   if (!source) return void (await pickSource());
   const include =
     includeSubdirs ?? document.querySelector<HTMLInputElement>("#include-subdirs")?.checked ?? false;
+  const targets =
+    include && (includeTargets ?? document.querySelector<HTMLInputElement>("#include-targets")?.checked ?? false);
   try {
-    await actions.startSession(source, include);
+    await actions.startSession(source, include, targets);
     chosen = null;
     includeSubdirs = null;
+    includeTargets = null;
   } catch (e) {
     toast(errorText(e), "error");
   }

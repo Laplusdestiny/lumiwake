@@ -274,6 +274,7 @@ function generalSection(d: Config): string {
     <section>
       <h2>読み込み</h2>
       <label class="check"><input type="checkbox" data-field="include_subdirs" ${g.include_subdirs ? "checked" : ""}> サブフォルダの画像も含める（読み込み時にも変更できます）</label>
+      <label class="check"><input type="checkbox" data-field="include_targets" ${g.include_targets ? "checked" : ""}> サブフォルダを含めるとき、振り分け先フォルダの画像も含める（読み込み時にも変更できます）</label>
       <label class="inline-field">並び順
         <select class="input" data-field="sort_order">
           ${SORT_ORDERS.map(([v, label]) => `<option value="${v}" ${g.sort_order === v ? "selected" : ""}>${label}</option>`).join("")}
@@ -490,6 +491,9 @@ export function handleSettingsInput(el: HTMLInputElement | HTMLSelectElement): v
     case "accent":
       g.accent = el.value as Config["general"]["accent"];
       document.documentElement.dataset.accent = g.accent;
+      return changed(false);
+    case "include_targets":
+      g.include_targets = el.checked;
       return changed(false);
     case "include_subdirs":
       g.include_subdirs = el.checked;

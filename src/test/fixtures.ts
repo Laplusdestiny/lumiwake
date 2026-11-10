@@ -7,6 +7,7 @@ export function makeConfig(overrides: Partial<ConfigPayload["config"]["general"]
       version: 1,
       general: {
         include_subdirs: false,
+        include_targets: false,
         sort_order: "name_asc",
         on_exit: "confirm",
         view_mode: "sidebar",
@@ -56,6 +57,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     pendingDeletions: 0,
     movedCounts: [0, 0],
     unsupported: [],
+    excludedTargets: [],
     conflict: null,
     ...overrides,
   };

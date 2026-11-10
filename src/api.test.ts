@@ -24,7 +24,7 @@ describe("api", () => {
     ["openConfigFile", [], "open_config_file", undefined],
     ["openLocation", ["/a"], "open_location", { path: "/a" }],
     ["listSubfolders", ["/a"], "list_subfolders", { path: "/a" }],
-    ["startSession", ["/src", true], "start_session", { source: "/src", includeSubdirs: true }],
+    ["startSession", ["/src", true, false], "start_session", { source: "/src", includeSubdirs: true, includeTargets: false }],
     ["getSession", [], "get_session", undefined],
     ["perform", [{ kind: "move", target: 2 }], "perform", { action: { kind: "move", target: 2 } }],
     ["resolveConflict", ["keepBoth"], "resolve_conflict", { choice: "keepBoth" }],

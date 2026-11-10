@@ -144,8 +144,13 @@ mod tests {
         }
         let state = AppState::new(dir.join("config.toml"));
         let session = Session::new(Arc::new(fileops::RealFs), images, None);
-        *state.session() =
-            Some(SessionState { session, generation: 1, source: dir.to_path_buf(), unsupported: Vec::new() });
+        *state.session() = Some(SessionState {
+            session,
+            generation: 1,
+            source: dir.to_path_buf(),
+            unsupported: Vec::new(),
+            excluded_targets: Vec::new(),
+        });
         state
     }
 

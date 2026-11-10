@@ -70,6 +70,9 @@ pub struct General {
     pub recent_sources: Vec<PathBuf>,
     /// サブフォルダも読み込むか（読み込み時に毎回変更できる）
     pub include_subdirs: bool,
+    /// サブフォルダを読み込むとき、振り分け先フォルダの中の画像も読み込むか（振り分け直しなどに使う）。
+    /// 既定では読み込まない（仕分け元の中に振り分け先があっても、振り分け済みの画像が出てこないように）
+    pub include_targets: bool,
     /// 振り分ける画像の並び順（仕分け中に変えると未処理の画像を並べ直す）
     pub sort_order: SortOrder,
     /// 削除フォルダ。未指定なら削除キーでファイルを動かさず、削除予定として記録する
@@ -92,6 +95,7 @@ impl Default for General {
             source_dir: None,
             recent_sources: Vec::new(),
             include_subdirs: false,
+            include_targets: false,
             sort_order: SortOrder::NameAsc,
             delete_folder: None,
             on_exit: OnExit::Confirm,
@@ -611,6 +615,19 @@ mod tests {
         c.keys.toggle_grid = "1".into();
         let issues = c.validate();
         assert!(issues.iter().any(|i| i.key.as_deref() == Some("1") && i.message.contains("一覧表示の切り替え")));
+    }
+
+    #[test]
+    fn include_targets_defaults_to_off_and_round_trips() {
+        // 項目のない既存の設定ファイルでは、今までどおり振り分け先を読み込まない
+        let c = parse("[general]\ninclude_subdirs = true\n", Path::new("x")).unwrap();
+        assert!(!c.general.include_targets);
+        assert!(!Config::default().general.include_targets);
+        let mut c = Config::default();
+        c.general.include_targets = true;
+        let text = toml::to_string(&c).unwrap();
+        assert!(text.contains("include_targets = true"), "{text}");
+        assert!(parse(&text, Path::new("x")).unwrap().general.include_targets);
     }
 
     #[test]

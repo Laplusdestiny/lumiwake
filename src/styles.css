@@ -1390,3 +1390,11 @@ body.resizing * {
   text-align: center;
   color: var(--muted);
 }
+
+/* 開始画面: 上のチェックに従属するチェック（サブフォルダを含めるときだけ選べる） */
+.check-sub {
+  margin-left: 24px;
+}
+.check-sub:has(input:disabled) {
+  opacity: 0.5;
+}

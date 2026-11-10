@@ -228,6 +228,8 @@ pub struct SessionView {
     /// 振り分け先ごとの、このセッションで移動した枚数（設定の targets と同じ並び）
     moved_counts: Vec<usize>,
     unsupported: Vec<String>,
+    /// 読み込み時に読み飛ばした振り分け先フォルダ
+    excluded_targets: Vec<String>,
     conflict: Option<ConflictView>,
 }
 
@@ -283,6 +285,7 @@ fn session_view(state: &AppState, s: &SessionState) -> SessionView {
             + state.retired().iter().map(|r| r.pending_deletions().len()).sum::<usize>(),
         moved_counts,
         unsupported: s.unsupported.iter().map(|p| lossy(p)).collect(),
+        excluded_targets: s.excluded_targets.iter().map(|p| lossy(p)).collect(),
         conflict: session.pending_conflict().map(|c| ConflictView {
             item: c.item,
             label: c.label.clone(),
@@ -308,12 +311,20 @@ fn with_session<T>(
 }
 
 #[tauri::command]
-pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs: bool) -> CmdResult<SessionView> {
+pub fn start_session(
+    state: State<'_, AppState>,
+    source: String,
+    include_subdirs: bool,
+    include_targets: bool,
+) -> CmdResult<SessionView> {
     let source = PathBuf::from(source);
     let (exclude, trash, order) = {
         let c = state.config();
-        let mut exclude: Vec<PathBuf> = c.config.targets.iter().map(|t| t.path.clone()).collect();
-        exclude.extend(c.config.general.delete_folder.clone());
+        // 削除フォルダは常に読み込まない。振り分け先は、含める指定がなければ読み込まない
+        let mut exclude: Vec<PathBuf> = c.config.general.delete_folder.iter().cloned().collect();
+        if !include_targets {
+            exclude.extend(c.config.targets.iter().map(|t| t.path.clone()));
+        }
         (exclude, c.config.general.delete_folder.clone(), c.config.general.sort_order)
     };
     let registry = state.registry.clone();
@@ -325,13 +336,27 @@ pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs
     remember(&state, |c| {
         c.remember_source(&source);
         c.general.include_subdirs = include_subdirs;
+        c.general.include_targets = include_targets;
     });
+    // 読み飛ばしたフォルダのうち、振り分け先だけを画面に伝える（削除フォルダを読まないのは当然なので伝えない）
+    let trash_real = trash.as_deref().and_then(|t| dunce::canonicalize(t).ok());
+    let excluded_targets: Vec<PathBuf> = result
+        .excluded_dirs
+        .into_iter()
+        .filter(|d| !trash_real.as_ref().is_some_and(|t| dunce::canonicalize(d).is_ok_and(|d| d.starts_with(t))))
+        .collect();
 
     state.cache.clear();
     state.grid_cache.clear();
     let generation = state.next_generation();
     let session = Session::new(Arc::new(fileops::RealFs), result.images, trash);
-    let old = state.session().replace(SessionState { session, generation, source, unsupported: result.unsupported });
+    let old = state.session().replace(SessionState {
+        session,
+        generation,
+        source,
+        unsupported: result.unsupported,
+        excluded_targets,
+    });
     if let Some(old) = old {
         // 前のフォルダで削除予定にしたものは、終了時の確認まで引き継ぐ
         if !old.session.pending_deletions().is_empty() {
@@ -629,7 +654,7 @@ mod tests {
         }
 
         fn start(&self) -> SessionView {
-            start_session(self.state(), lossy(&self.path("src")), false).unwrap()
+            start_session(self.state(), lossy(&self.path("src")), false, false).unwrap()
         }
 
         fn act(&self, action: ActionArg) -> SessionView {
@@ -679,7 +704,7 @@ mod tests {
     #[test]
     fn start_session_reports_missing_folder() {
         let f = Fixture::new();
-        assert!(start_session(f.state(), lossy(&f.path("nowhere")), false).is_err());
+        assert!(start_session(f.state(), lossy(&f.path("nowhere")), false, false).is_err());
     }
 
     #[test]
@@ -838,7 +863,7 @@ mod tests {
         // 別のフォルダに切り替えても、前のフォルダの削除予定は終了時まで残す
         std::fs::create_dir_all(f.path("other")).unwrap();
         write_dummy(&f.path("other/x.png"), 4, 4);
-        let v = start_session(f.state(), lossy(&f.path("other")), false).unwrap();
+        let v = start_session(f.state(), lossy(&f.path("other")), false, false).unwrap();
         assert_eq!(v.total, 1);
         assert_eq!(v.pending_deletions, 1);
         f.act(ActionArg::Delete);
@@ -946,5 +971,71 @@ mod tests {
         let stale = tauri::async_runtime::block_on(image_info(f.state(), v.generation + 100, 0));
         assert!(stale.err().unwrap().contains("古い画面"));
         assert!(tauri::async_runtime::block_on(image_info(f.state(), v.generation, 99)).is_err());
+    }
+
+    // ---- 振り分け先フォルダを含める／読み飛ばしたフォルダを伝える ----
+
+    /// 振り分け先 a・b と削除フォルダ trash を中に持つ上位フォルダを、サブフォルダ込みで読み込む
+    fn start_parent(f: &Fixture, include_targets: bool) -> SessionView {
+        f.set_delete_folder("trash");
+        write_dummy(&f.path("a/sorted.png"), 8, 6);
+        std::fs::create_dir_all(f.path("b/deep")).unwrap();
+        write_dummy(&f.path("b/deep/sorted2.png"), 8, 6);
+        write_dummy(&f.path("trash/gone.png"), 8, 6);
+        start_session(f.state(), lossy(f.dir.path()), true, include_targets).unwrap()
+    }
+
+    fn dir_names(dirs: &[String]) -> Vec<String> {
+        dirs.iter().map(|d| fileops::file_name(Path::new(d))).collect()
+    }
+
+    #[test]
+    fn target_folders_are_skipped_by_default_and_reported() {
+        let f = Fixture::new();
+        let v = start_parent(&f, false);
+        assert_eq!(v.total, 3, "仕分け元の 3 枚だけ");
+        assert_eq!(
+            dir_names(&v.excluded_targets),
+            ["a", "b"],
+            "読み飛ばした振り分け先を伝える（削除フォルダは含めない）"
+        );
+        assert!(!f.config().config.general.include_targets);
+    }
+
+    #[test]
+    fn target_folders_are_loaded_when_asked_but_never_the_delete_folder() {
+        let f = Fixture::new();
+        let v = start_parent(&f, true);
+        assert_eq!(v.total, 5, "振り分け先の 2 枚も読み込む。削除フォルダの 1 枚は読み込まない");
+        assert!(v.excluded_targets.is_empty());
+        let names: Vec<_> =
+            list_items(f.state()).unwrap().items.iter().map(|i| i.name.clone()).filter(|n| n != "conf").collect();
+        assert!(names.contains(&"sorted.png".to_string()) && names.contains(&"sorted2.png".to_string()));
+        assert!(!names.contains(&"gone.png".to_string()));
+        // 次回のために設定に覚える
+        let saved = config::load_or_create(&f.state().config_path).unwrap();
+        assert!(saved.general.include_targets && saved.general.include_subdirs);
+    }
+
+    #[test]
+    fn an_image_already_in_its_target_is_not_moved() {
+        let f = Fixture::new();
+        start_parent(&f, true);
+        // a/sorted.png を見て、振り分け先 a のキーを押す
+        let items = list_items(f.state()).unwrap().items;
+        let sorted = items.iter().find(|i| i.name == "sorted.png").unwrap().index;
+        jump_to(f.state(), sorted).unwrap();
+        let v = f.act(ActionArg::Move { target: 0 });
+        assert!(f.path("a/sorted.png").exists(), "同じフォルダへは動かさない");
+        assert!(v.conflict.is_none(), "自分自身との同名衝突にしない");
+        assert_eq!(v.moved_counts, vec![1, 0]);
+    }
+
+    #[test]
+    fn nothing_is_reported_without_subfolders() {
+        let f = Fixture::new();
+        f.set_delete_folder("trash");
+        let v = start_session(f.state(), lossy(f.dir.path()), false, false).unwrap();
+        assert!(v.excluded_targets.is_empty());
     }
 }
