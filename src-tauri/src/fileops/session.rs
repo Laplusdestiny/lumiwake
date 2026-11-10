@@ -39,6 +39,8 @@ pub enum DeletionReason {
     KeepExisting,
     /// 同名ファイルの衝突で「上書き」を選んだため、置き換えられた既存ファイル
     Overwritten,
+    /// 類似画像の確認で削除した
+    Similar,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -134,6 +136,8 @@ pub struct HistoryEntry {
 pub enum FileOpError {
     #[error("処理する画像がありません")]
     NoCurrentItem,
+    #[error("この画像はすでに振り分け済みです")]
+    NotOpen,
     #[error("同名ファイルの確認待ちではありません")]
     NoPendingConflict,
     #[error("同名ファイルの処理を先に選んでください")]
@@ -240,6 +244,22 @@ impl Session {
         }
         self.advance_from(idx);
         Ok(Outcome::Done)
+    }
+
+    /// 番号で指定した未処理（保留を含む）の画像を削除予定にする（類似画像の確認から使う）。
+    /// 見ている画像を消したときだけ次へ進み、それ以外では現在位置を変えない
+    pub fn delete_at(&mut self, idx: usize, reason: DeletionReason) -> Result<(), FileOpError> {
+        if self.conflict.is_some() {
+            return Err(FileOpError::ConflictPending);
+        }
+        if !self.items.get(idx).is_some_and(|i| i.status.is_open()) {
+            return Err(FileOpError::NotOpen);
+        }
+        self.delete_item(idx, reason)?;
+        if idx == self.cursor {
+            self.advance_from(idx);
+        }
+        Ok(())
     }
 
     pub fn pending_conflict(&self) -> Option<&ConflictInfo> {
@@ -454,6 +474,7 @@ impl Session {
     fn delete_item(&mut self, idx: usize, reason: DeletionReason) -> Result<(), FileOpError> {
         let label = match reason {
             DeletionReason::KeepExisting => "削除（既存を残す）",
+            DeletionReason::Similar => "削除（類似）",
             _ => "削除",
         }
         .to_string();
