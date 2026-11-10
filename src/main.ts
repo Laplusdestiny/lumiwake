@@ -16,6 +16,14 @@ import {
   openGrid,
   renderGrid,
 } from "./views/grid";
+import {
+  handleSimilarAction,
+  handleSimilarDblClick,
+  handleSimilarInput,
+  handleSimilarKey,
+  openSimilar,
+  renderSimilar,
+} from "./views/similar";
 import { handleConflictKey, handleExitAction, handleExitKey, renderOverlay, requestQuit } from "./views/dialogs";
 import {
   handleCaptureKey,
@@ -48,6 +56,10 @@ function render(): void {
     case "grid":
       // 一覧を出せなければ（セッションや一覧の写しがない）仕分け画面へ戻す
       renderGrid(root);
+      break;
+    case "similar":
+      // 出せなければ（セッションやグループの写しがない）仕分け画面へ戻す
+      renderSimilar(root);
       break;
   }
   renderOverlay();
@@ -105,6 +117,8 @@ window.addEventListener("keydown", (e) => {
         return false;
       case "grid":
         return handleGridKey(combo);
+      case "similar":
+        return handleSimilarKey(combo, e);
     }
   })();
   // 仕分けのキーと WebView の既定動作（再読み込み・印刷・検索など）が重ならないようにする
@@ -121,6 +135,7 @@ document.addEventListener("click", async (e) => {
     if (await handleExitAction(action, el)) return;
     if (store.screen === "settings" && (await handleSettingsAction(action, el))) return;
     if (store.screen === "grid" && handleGridAction(action, el)) return;
+    if (store.screen === "similar" && handleSimilarAction(action, el)) return;
     switch (action) {
       case "move":
         return void actions.perform({ kind: "move", target: Number(el.dataset.target) });
@@ -140,6 +155,8 @@ document.addEventListener("click", async (e) => {
         return openSettings();
       case "grid":
         return await openGrid();
+      case "similar":
+        return await openSimilar();
       case "change-source":
         store.screen = "start";
         return notify();
@@ -166,6 +183,13 @@ document.addEventListener("input", (e) => {
   if (store.screen === "settings" && (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement))
     handleSettingsInput(e.target);
   if (store.screen === "grid" && e.target instanceof HTMLInputElement) handleGridInput(e.target);
+  if (store.screen === "similar" && (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement))
+    handleSimilarInput(e.target);
+});
+
+// 類似画像: タイルのダブルクリックで 1 枚表示を開く
+document.addEventListener("dblclick", (e) => {
+  if (store.screen === "similar") handleSimilarDblClick(e.target as HTMLElement);
 });
 
 // 一覧: Ctrl+ホイールでサムネイルの大きさを変える（WebView の拡大にはしない）

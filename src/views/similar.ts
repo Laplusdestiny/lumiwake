@@ -1,0 +1,451 @@
+// 類似画像の確認画面。中身の似た画像をグループで並べ、不要なものを削除予定にする。
+// 判定とファイル操作は Rust 側。ここでは自動で選んだり削除したりしない
+import { api, errorText, lumiUrl, type SimilarGroup, type SimilarMember } from "../api";
+import * as actions from "../actions";
+import { displayCombo } from "../keys";
+import { notify, store } from "../store";
+import { toast } from "../toast";
+import { esc, formatBytes, formatCount, icons } from "../util";
+
+/** 閾値はハッシュの違うビット数（0〜64）で持つ。小さいほど厳しい */
+export const THRESHOLD_DEFAULT = 6;
+export const THRESHOLD_MAX = 16;
+const THRESHOLD_KEY = "lumiwake.similarThreshold";
+/** 判定中に進み具合を見に行く間隔（ms） */
+const POLL_MS = 300;
+
+type Filter = "all" | "exact" | "names" | "resolution";
+
+const FILTERS: { value: Filter; label: string; test: (g: SimilarGroup) => boolean }[] = [
+  { value: "all", label: "すべて", test: () => true },
+  { value: "exact", label: "完全一致", test: (g) => g.exact },
+  { value: "names", label: "名前が似ている", test: (g) => g.similarNames },
+  { value: "resolution", label: "解像度が同じ", test: (g) => g.sameResolution },
+];
+
+/** 保存値などを閾値にする。数値でなければ既定値、範囲外は端に丸める */
+export function clampThreshold(v: unknown): number {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return THRESHOLD_DEFAULT;
+  return Math.round(Math.min(THRESHOLD_MAX, Math.max(0, n)));
+}
+
+/** 閾値（違うビット数）を類似度（%）にする。Rust 側の similarity_percent と同じ計算 */
+export function similarityPercent(distance: number): number {
+  return Math.round((1 - distance / 64) * 100);
+}
+
+function loadThreshold(): number {
+  try {
+    return clampThreshold(localStorage.getItem(THRESHOLD_KEY));
+  } catch {
+    return THRESHOLD_DEFAULT;
+  }
+}
+
+function saveThreshold(value: number): void {
+  try {
+    localStorage.setItem(THRESHOLD_KEY, String(value));
+  } catch {
+    // 保存できなくても今回の表示には影響しない
+  }
+}
+
+let threshold = loadThreshold();
+let filter: Filter = "all";
+/** 選択中の画像の番号 */
+let selected: number | null = null;
+let rootEl: HTMLElement | null = null;
+let timer: ReturnType<typeof setTimeout> | null = null;
+/** 描いたときのグループと絞り込み。変わったときだけ作り直す */
+let built: { groups: object; filter: Filter } | null = null;
+
+/** 絞り込み後のグループ。画面を開いているときだけ呼ぶ */
+function visible(): SimilarGroup[] {
+  const test = FILTERS.find((f) => f.value === filter)!.test;
+  return store.similar!.groups.filter(test);
+}
+
+/** 画像が、表示中の何番目のグループの何枚目か */
+function position(index: number | null): { group: number; member: number } | null {
+  const groups = visible();
+  for (let g = 0; g < groups.length; g++) {
+    const m = groups[g].members.findIndex((x) => x.index === index);
+    if (m >= 0) return { group: g, member: m };
+  }
+  return null;
+}
+
+/**
+ * 選択中の画像が表示から消えていたら、`was`（消える前の位置）に近い画像を選ぶ:
+ * 同じ位置のグループの同じ位置、なければその末尾
+ */
+function reselect(was: { group: number; member: number } | null): void {
+  if (position(selected)) return;
+  const groups = visible();
+  if (groups.length === 0) {
+    selected = null;
+    return;
+  }
+  const g = groups[Math.min(was?.group ?? 0, groups.length - 1)];
+  selected = g.members[Math.min(was?.member ?? 0, g.members.length - 1)].index;
+}
+
+/** 同名ファイルの確認中など、開けない状態か */
+function cannotOpen(): boolean {
+  return !store.session || !!store.session.conflict || store.screen !== "sort";
+}
+
+/**
+ * 類似画像の確認画面を開き、判定を始める。先に押した振り分けの結果を見てから開くよう、操作の列に並べる
+ */
+export function openSimilar(): Promise<void> {
+  if (cannotOpen()) return Promise.resolve();
+  return actions.enqueue(async () => {
+    if (cannotOpen()) return;
+    try {
+      const status = await api.startSimilarScan();
+      const list = await api.similarGroups(threshold);
+      // 取得中に設定画面へ移ったり、同名ファイルの確認が始まったりしたら開かない
+      if (cannotOpen()) return;
+      store.similar = { generation: list.generation, status, groups: list.groups };
+    } catch (e) {
+      toast(errorText(e), "error");
+      return;
+    }
+    filter = "all";
+    built = null;
+    selected = store.similar.groups.flatMap((g) => g.members).find((m) => m.current)?.index ?? null;
+    reselect(null);
+    store.screen = "similar";
+    notify();
+    focusList();
+    if (store.similar.status.running) schedulePoll();
+  });
+}
+
+export function closeSimilar(): void {
+  if (timer) clearTimeout(timer);
+  timer = null;
+  store.similar = null;
+  built = null;
+  store.screen = "sort";
+  notify();
+}
+
+/** グループを取り直す。消えた画像を選んでいたら近い画像を選び直す */
+async function refresh(): Promise<void> {
+  if (!store.similar) return;
+  const was = position(selected);
+  try {
+    const list = await api.similarGroups(threshold);
+    if (!store.similar) return;
+    store.similar.generation = list.generation;
+    store.similar.groups = list.groups;
+  } catch (e) {
+    toast(errorText(e), "error");
+    return;
+  }
+  reselect(was);
+  notify();
+}
+
+function schedulePoll(): void {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => void poll(), POLL_MS);
+}
+
+/** 判定の進み具合を見て、進んでいればグループを取り直す */
+async function poll(): Promise<void> {
+  timer = null;
+  const sim = store.similar;
+  if (!sim) return;
+  try {
+    const status = await api.similarStatus();
+    if (store.similar !== sim) return;
+    const progressed = status.done !== sim.status.done || status.running !== sim.status.running;
+    sim.status = status;
+    if (progressed) await refresh();
+    else notify();
+  } catch (e) {
+    toast(errorText(e), "error");
+    return;
+  }
+  if (store.similar === sim && sim.status.running) schedulePoll();
+}
+
+// ---- 描画 ----
+
+function skeleton(): string {
+  const k = store.config!.config.keys;
+  const options = FILTERS.map((f) => `<option value="${f.value}">${esc(f.label)}</option>`).join("");
+  return `
+  <div class="similar-view">
+    <header class="topbar similar-bar">
+      <div class="brand">類似画像</div>
+      <span class="similar-progress" data-slot="similar-progress"></span>
+      <span class="similar-failed" data-slot="similar-failed" title="壊れているなどで読めなかった画像は、判定の対象から外しています"></span>
+      <div class="grow"></div>
+      <label class="similar-threshold" title="右へ動かすほど、違いの大きい画像も同じグループにします">
+        <span class="muted small" data-slot="similar-threshold"></span>
+        <input type="range" data-similar="threshold" min="0" max="${THRESHOLD_MAX}" step="1" aria-label="類似とみなす範囲">
+      </label>
+      <select class="similar-filter" data-similar="filter" aria-label="根拠で絞り込み">${options}</select>
+      <button class="icon-btn" data-action="similar-close" aria-label="元の画面に戻る" title="元の画面に戻る（Esc / ${esc(displayCombo(k.toggle_similar))}）">${icons.close}</button>
+    </header>
+    <div class="similar-hints hints">
+      <span>← → ↑ ↓ 選択</span>
+      <span>${esc(displayCombo(k.delete))} 削除</span>
+      <span>${esc(displayCombo(k.keep_only))} これだけ残す</span>
+      <span>${esc(displayCombo(k.undo))} 取り消し</span>
+      <span>Enter 1 枚表示で開く</span>
+    </div>
+    <div class="similar-scroll" data-slot="similar-scroll" tabindex="-1">
+      <div class="similar-groups" data-slot="similar-groups"></div>
+    </div>
+  </div>`;
+}
+
+function badgesHtml(g: SimilarGroup): string {
+  const labels = [
+    g.exact && "完全一致",
+    g.sameSize && "サイズが同じ",
+    g.sameResolution && "解像度が同じ",
+    g.similarNames && "名前が似ている",
+  ].filter(Boolean);
+  return labels.map((l) => `<span class="similar-badge">${esc(l)}</span>`).join("");
+}
+
+function tileHtml(m: SimilarMember, generation: number): string {
+  const k = store.config!.config.keys;
+  const marks = [m.largestResolution && "解像度が最大", m.largestSize && "サイズが最大", m.current && "現在の画像"]
+    .filter(Boolean)
+    .map((l) => `<span class="similar-mark">${esc(l)}</span>`)
+    .join("");
+  return `<div class="similar-tile" data-action="similar-select" data-index="${m.index}" role="option" aria-selected="false" title="${esc(m.name)}">
+      <span class="similar-thumb"><img src="${lumiUrl(`grid/${generation}/${m.index}`)}" alt="" loading="lazy" decoding="async"></span>
+      <span class="similar-name">${esc(m.name)}</span>
+      <span class="similar-meta">${m.width}×${m.height}・${esc(formatBytes(m.size))}・類似度 ${m.similarity}%</span>
+      <span class="similar-marks">${marks}</span>
+      <span class="similar-actions">
+        <button class="btn btn-sm" data-action="similar-delete" data-index="${m.index}" title="この画像を削除予定にする（${esc(displayCombo(k.delete))}）">削除</button>
+        <button class="btn btn-sm" data-action="similar-keep" data-index="${m.index}" title="この画像を残し、グループの残りを削除予定にする（${esc(displayCombo(k.keep_only))}）">これだけ残す</button>
+      </span>
+    </div>`;
+}
+
+function emptyText(): string {
+  const sim = store.similar!;
+  if (sim.groups.length > 0) return "該当するグループがありません";
+  return sim.status.running ? "判定中…" : "似た画像は見つかりませんでした";
+}
+
+function buildGroups(root: HTMLElement): void {
+  const sim = store.similar!;
+  const groups = visible();
+  const el = root.querySelector<HTMLElement>('[data-slot="similar-groups"]')!;
+  el.innerHTML = groups.length
+    ? groups
+        .map(
+          (g, i) => `<section class="similar-group" role="listbox" aria-label="グループ ${i + 1}">
+          <header class="similar-group-head">
+            <span class="similar-group-title">グループ ${i + 1}・${g.members.length} 枚</span>
+            ${badgesHtml(g)}
+          </header>
+          <div class="similar-tiles">${g.members.map((m) => tileHtml(m, sim.generation)).join("")}</div>
+        </section>`,
+        )
+        .join("")
+    : `<div class="similar-empty">${emptyText()}</div>`;
+  el.querySelectorAll("img").forEach((img) =>
+    img.addEventListener("error", () => (img.parentElement!.innerHTML = icons.image), { once: true }),
+  );
+  built = { groups: sim.groups, filter };
+}
+
+function progressText(): string {
+  const sim = store.similar!;
+  if (sim.status.running) return `判定中 ${formatCount(sim.status.done)} / ${formatCount(sim.status.total)}`;
+  const groups = visible();
+  const images = groups.reduce((n, g) => n + g.members.length, 0);
+  const count = filter === "all" ? `${groups.length}` : `${groups.length} / ${sim.groups.length}`;
+  return images > 0 ? `${count} グループ・${formatCount(images)} 枚` : `${count} グループ`;
+}
+
+/** 選択中のタイルに印を付け、見える位置までスクロールする */
+function updateSelection(): void {
+  rootEl!.querySelectorAll<HTMLElement>(".similar-tile").forEach((el) => {
+    const on = Number(el.dataset.index) === selected;
+    el.classList.toggle("is-selected", on);
+    el.setAttribute("aria-selected", String(on));
+    if (on) el.scrollIntoView?.({ block: "nearest" });
+  });
+}
+
+export function renderSimilar(root: HTMLElement): void {
+  const sim = store.similar;
+  const s = store.session;
+  // 設定で並び順を変えたときなど、画像の番号が変わったら古いグループは使えない。
+  // 同名ファイルの確認が始まったら、確認ダイアログを出せるよう仕分け画面へ戻る
+  if (!sim || !s || sim.generation !== s.generation || s.conflict) return closeSimilar();
+  rootEl = root;
+  if (root.dataset.view !== "similar") {
+    root.innerHTML = skeleton();
+    root.dataset.view = "similar";
+    built = null;
+  }
+  const slot = (name: string) => root.querySelector<HTMLElement>(`[data-slot="${name}"]`)!;
+  root.querySelector<HTMLInputElement>('[data-similar="threshold"]')!.value = String(threshold);
+  root.querySelector<HTMLSelectElement>('[data-similar="filter"]')!.value = filter;
+  slot("similar-threshold").textContent = `類似度 ${similarityPercent(threshold)}% 以上`;
+  slot("similar-failed").textContent = sim.status.failed > 0 ? `読めなかった画像 ${formatCount(sim.status.failed)} 枚` : "";
+  if (built?.groups !== sim.groups || built.filter !== filter) buildGroups(root);
+  slot("similar-progress").textContent = progressText();
+  // 判定中かどうかで文言が変わる（グループがまだないとき）
+  const empty = root.querySelector(".similar-empty");
+  if (empty) empty.textContent = emptyText();
+  updateSelection();
+}
+
+// ---- 操作 ----
+
+function focusList(): void {
+  rootEl?.querySelector<HTMLElement>('[data-slot="similar-scroll"]')?.focus();
+}
+
+function memberOf(index: number | null): { group: SimilarGroup; member: SimilarMember } | null {
+  for (const group of store.similar?.groups ?? []) {
+    const member = group.members.find((m) => m.index === index);
+    if (member) return { group, member };
+  }
+  return null;
+}
+
+/**
+ * 画像 1 枚を削除予定にする。`index` を省くと、順番が来た時点で選択中の画像
+ * （連打しても、前の操作のあとに選び直された画像に対して働く）
+ */
+function deleteOne(index?: number): Promise<void> {
+  return actions.enqueue(async () => {
+    const hit = memberOf(index ?? selected);
+    if (!hit || !store.similar) return;
+    try {
+      const r = await api.deleteSimilar(store.similar.generation, hit.member.index);
+      actions.setSession(r.view);
+      toast(`削除予定にしました: ${hit.member.name}`);
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+    await refresh();
+  });
+}
+
+/** 画像 1 枚を残し、同じグループの残りを削除予定にする */
+function keepOnly(index?: number): Promise<void> {
+  return actions.enqueue(async () => {
+    const hit = memberOf(index ?? selected);
+    if (!hit || !store.similar) return;
+    const keep = hit.member.index;
+    const others = hit.group.members.map((m) => m.index).filter((i) => i !== keep);
+    try {
+      const r = await api.keepOnly(store.similar.generation, keep, others);
+      actions.setSession(r.view);
+      if (r.error) toast(`${r.deleted} 枚を削除予定にしましたが、途中で失敗しました: ${r.error}`, "error");
+      else toast(`${r.deleted} 枚を削除予定にしました（取り消しで 1 枚ずつ戻せます）`);
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+    await refresh();
+  });
+}
+
+function undo(): void {
+  void actions.undo();
+  void actions.enqueue(refresh);
+}
+
+function openItem(index: number | null): void {
+  if (index == null || !memberOf(index)) return;
+  closeSimilar();
+  void actions.jumpTo(index);
+}
+
+function moveSelection(combo: string): boolean {
+  if (!["Left", "Right", "Up", "Down", "Home", "End"].includes(combo)) return false;
+  const groups = visible();
+  if (groups.length === 0) return true;
+  const pos = position(selected) ?? { group: 0, member: 0 };
+  const lastGroup = groups.length - 1;
+  let { group, member } = pos;
+  if (combo === "Left") member--;
+  if (combo === "Right") member++;
+  if (combo === "Up") group--;
+  if (combo === "Down") group++;
+  if (combo === "Home") [group, member] = [0, 0];
+  if (combo === "End") [group, member] = [lastGroup, 0];
+  const g = groups[Math.min(lastGroup, Math.max(0, group))];
+  selected = g.members[Math.min(g.members.length - 1, Math.max(0, member))].index;
+  updateSelection();
+  return true;
+}
+
+/** 類似画像の確認画面のキー操作。処理したら true。振り分けキー・スキップは受け付けない */
+export function handleSimilarKey(combo: string, e: Pick<KeyboardEvent, "repeat">): boolean {
+  if (!store.similar) return false;
+  const k = store.config!.config.keys;
+  if (combo === "Escape" || combo === k.toggle_similar) return closeSimilar(), true;
+  if (combo === k.delete || combo === k.keep_only || combo === k.undo) {
+    // 押しっぱなしや処理待ちの間に、続けて削除しない
+    if (e.repeat || actions.busy()) return true;
+    if (combo === k.undo) undo();
+    else if (combo === k.delete) void deleteOne();
+    else void keepOnly();
+    return true;
+  }
+  if (combo === "Enter") return openItem(selected), true;
+  return moveSelection(combo);
+}
+
+export function handleSimilarAction(action: string, el: HTMLElement): boolean {
+  const index = Number(el.dataset.index);
+  switch (action) {
+    case "similar-close":
+      closeSimilar();
+      return true;
+    case "similar-select":
+      selected = index;
+      updateSelection();
+      focusList();
+      return true;
+    case "similar-delete":
+      void deleteOne(index);
+      return true;
+    case "similar-keep":
+      void keepOnly(index);
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** タイルのダブルクリックで 1 枚表示を開く（タイル上のボタンは除く）。処理したら true */
+export function handleSimilarDblClick(target: HTMLElement): boolean {
+  const el = target.closest<HTMLElement>("[data-action]");
+  if (!store.similar || el?.dataset.action !== "similar-select") return false;
+  openItem(Number(el.dataset.index));
+  return true;
+}
+
+export function handleSimilarInput(el: HTMLInputElement | HTMLSelectElement): void {
+  if (el.dataset.similar === "threshold") {
+    threshold = clampThreshold(el.value);
+    saveThreshold(threshold);
+    notify();
+    void actions.enqueue(refresh);
+  } else if (el.dataset.similar === "filter") {
+    const was = position(selected);
+    filter = FILTERS.some((f) => f.value === el.value) ? (el.value as Filter) : "all";
+    reselect(was);
+    notify();
+  }
+}

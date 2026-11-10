@@ -110,6 +110,15 @@ describe("終了時の削除確認", () => {
     expect(store.modal).toBe(false);
   });
 
+  it("類似画像の確認で削除したものは、その理由を出す", async () => {
+    api.pendingDeletions.mockResolvedValue(
+      summary({ items: [{ path: "/home/u/inbox/d.jpg", original: "/home/u/inbox/d.jpg", reason: "similar", inTrash: false }] }),
+    );
+    await requestQuit();
+    renderOverlay();
+    expect(text(".pending-main")).toContain("類似画像の確認で削除");
+  });
+
   it("確認ダイアログに件数・置き場所・理由を出す", async () => {
     api.pendingDeletions.mockResolvedValue(summary());
     await requestQuit();

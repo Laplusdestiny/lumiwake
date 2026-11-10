@@ -77,6 +77,7 @@ const REASON: Record<string, string> = {
   deleteKey: "削除キー",
   keepExisting: "同名ファイルがあったため（既存を残す）",
   overwritten: "上書きで置き換えられたファイル",
+  similar: "類似画像の確認で削除",
 };
 
 function exitHtml(st: ExitState): string {

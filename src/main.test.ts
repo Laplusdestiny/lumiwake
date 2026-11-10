@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // 画面全体の結合テスト。Rust 側（invoke）だけを差し替え、キー入力・クリックから呼ばれるコマンドを確かめる
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeConfig, makeGridList, makeSession } from "./test/fixtures";
+import { makeConfig, makeGridList, makeSession, makeSimilarGroups, makeSimilarStatus } from "./test/fixtures";
 
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
@@ -32,6 +32,15 @@ function respond(command: string, args?: Record<string, unknown>): unknown {
       return { items: [], trashDir: null, onExit: "confirm" };
     case "list_items":
       return makeGridList();
+    case "start_similar_scan":
+    case "similar_status":
+      return makeSimilarStatus();
+    case "similar_groups":
+      return makeSimilarGroups();
+    case "delete_similar":
+      return { view: makeSession({ pendingDeletions: 1 }), message: null };
+    case "keep_only":
+      return { view: makeSession({ pendingDeletions: 2 }), deleted: 2, error: null };
     case "image_info":
       return { name: "c.jpg", path: "/c.jpg", size: 1, modified: null, width: 1, height: 1, taken: null };
     default:
@@ -160,6 +169,70 @@ describe("キー入力", () => {
   it("Ctrl+Q で終了する", async () => {
     press("KeyQ", { ctrlKey: true });
     await vi.waitFor(() => expect(commands()).toContain("exit_app"));
+  });
+});
+
+describe("類似画像", () => {
+  const openByKey = async () => {
+    (await import("./store")).notify();
+    expect(press("KeyD", { ctrlKey: true, shiftKey: true })).toBe(true);
+    await vi.waitFor(() => expect(root().dataset.view).toBe("similar"));
+  };
+
+  it("Ctrl+Shift+D で開き、削除キーで選択中の画像を削除予定にする", async () => {
+    await openByKey();
+    expect(commands()).toEqual(["start_similar_scan", "similar_groups"]);
+    expect(press("Delete")).toBe(true);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("delete_similar", { generation: 1, index: 2 }));
+    expect(commands()).not.toContain("perform");
+    press("Escape");
+    expect(store.screen).toBe("sort");
+  });
+
+  it("Ctrl+Shift+K でこれだけ残し、振り分けキー・スキップではファイルを動かさない", async () => {
+    await openByKey();
+    press("Digit1");
+    press("Space");
+    expect(press("KeyK", { ctrlKey: true, shiftKey: true })).toBe(true);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("keep_only", { generation: 1, keep: 2, others: [1, 4] }));
+    expect(commands()).not.toContain("perform");
+    press("Escape");
+  });
+
+  it("ボタンで開き、タイルのクリックで選択、ダブルクリックで 1 枚表示を開く", async () => {
+    root().dataset.view = "";
+    (await import("./store")).notify();
+    root().querySelector<HTMLElement>('[data-action="similar"]')!.click();
+    await vi.waitFor(() => expect(root().dataset.view).toBe("similar"));
+    const tile = root().querySelector<HTMLElement>('.similar-tile[data-index="5"]')!;
+    tile.click();
+    await vi.waitFor(() => expect(tile.classList.contains("is-selected")).toBe(true));
+    tile.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("jump_to", { index: 5 }));
+    expect(store.screen).toBe("sort");
+  });
+
+  it("閾値のスライダーと絞り込みの入力を画面に渡す", async () => {
+    await openByKey();
+    const range = root().querySelector<HTMLInputElement>('[data-similar="threshold"]')!;
+    range.value = "10";
+    range.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("similar_groups", { maxDistance: 10 }));
+    const select = root().querySelector<HTMLSelectElement>('[data-similar="filter"]')!;
+    select.value = "exact";
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(root().querySelectorAll(".similar-group")).toHaveLength(1);
+    range.value = "6";
+    range.dispatchEvent(new Event("input", { bubbles: true }));
+    press("Escape");
+  });
+
+  it("確認画面の写しがなければ仕分け画面を出す", async () => {
+    store.screen = "similar";
+    store.similar = null;
+    (await import("./store")).notify();
+    expect(store.screen).toBe("sort");
+    expect(root().dataset.view).toBe("sort-sidebar");
   });
 });
 

@@ -1,5 +1,5 @@
 // テスト用のデータ。Rust 側（commands.rs）が返す形をまねる
-import type { ConfigPayload, GridList, SessionView } from "../api";
+import type { ConfigPayload, GridList, SessionView, SimilarGroups, SimilarMember, SimilarStatus } from "../api";
 
 export function makeConfig(overrides: Partial<ConfigPayload["config"]["general"]> = {}): ConfigPayload {
   return {
@@ -25,6 +25,8 @@ export function makeConfig(overrides: Partial<ConfigPayload["config"]["general"]
         toggle_view: "Ctrl+Shift+F",
         toggle_paths: "Ctrl+Shift+P",
         toggle_grid: "Ctrl+Shift+L",
+        toggle_similar: "Ctrl+Shift+D",
+        keep_only: "Ctrl+Shift+K",
       },
       targets: [
         { key: "1", name: "", path: "/home/u/写真/風景" },
@@ -76,4 +78,51 @@ export function makeGridList(overrides: Partial<GridList> = {}): GridList {
     ],
     ...overrides,
   };
+}
+
+function member(index: number, name: string, over: Partial<SimilarMember> = {}): SimilarMember {
+  return {
+    index,
+    name,
+    width: 400,
+    height: 300,
+    size: 1000,
+    similarity: 97,
+    largestResolution: false,
+    largestSize: false,
+    current: false,
+    ...over,
+  };
+}
+
+/** 類似画像の 2 グループ（3 枚と 2 枚。番号 2 が現在の画像） */
+export function makeSimilarGroups(overrides: Partial<SimilarGroups> = {}): SimilarGroups {
+  return {
+    generation: 1,
+    groups: [
+      {
+        members: [
+          member(1, "a.jpg", { width: 800, height: 600, size: 2048, largestResolution: true, largestSize: true }),
+          member(2, "a (1).jpg", { current: true }),
+          member(4, "a_copy.jpg", { size: 900, similarity: 95 }),
+        ],
+        exact: false,
+        sameSize: false,
+        sameResolution: false,
+        similarNames: true,
+      },
+      {
+        members: [member(5, "x.png", { similarity: 100 }), member(7, "y.png", { similarity: 100 })],
+        exact: true,
+        sameSize: true,
+        sameResolution: true,
+        similarNames: false,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+export function makeSimilarStatus(overrides: Partial<SimilarStatus> = {}): SimilarStatus {
+  return { generation: 1, done: 8, total: 8, running: false, failed: 0, ...overrides };
 }
