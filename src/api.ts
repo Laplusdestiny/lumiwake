@@ -47,6 +47,8 @@ export interface Config {
     toggle_view: string;
     toggle_paths: string;
     toggle_grid: string;
+    toggle_similar: string;
+    keep_only: string;
   };
   targets: Target[];
 }
@@ -136,6 +138,53 @@ export interface GridList {
   items: GridItem[];
 }
 
+/** 類似判定の走査の進み具合 */
+export interface SimilarStatus {
+  generation: number;
+  /** 判定を終えた枚数（読めなかったものを含む） */
+  done: number;
+  total: number;
+  running: boolean;
+  /** 読めなかった枚数 */
+  failed: number;
+}
+
+export interface SimilarMember {
+  index: number;
+  name: string;
+  width: number;
+  height: number;
+  size: number;
+  /** グループ内で最も近い画像との類似度（%） */
+  similarity: number;
+  largestResolution: boolean;
+  largestSize: boolean;
+  current: boolean;
+}
+
+/** 中身の似た画像のまとまりと、その根拠 */
+export interface SimilarGroup {
+  members: SimilarMember[];
+  /** 全員のファイルの中身が完全に同じ */
+  exact: boolean;
+  sameSize: boolean;
+  sameResolution: boolean;
+  similarNames: boolean;
+}
+
+export interface SimilarGroups {
+  generation: number;
+  groups: SimilarGroup[];
+}
+
+export interface KeepOnlyResult {
+  view: SessionView;
+  /** 削除予定にした枚数 */
+  deleted: number;
+  /** 途中で失敗したときの理由 */
+  error: string | null;
+}
+
 export interface ActionResult {
   view: SessionView;
   message: string | null;
@@ -143,7 +192,7 @@ export interface ActionResult {
 
 export type ConflictChoice = "keepExisting" | "overwrite" | "keepBoth" | "skip";
 
-export type DeletionReason = "deleteKey" | "keepExisting" | "overwritten";
+export type DeletionReason = "deleteKey" | "keepExisting" | "overwritten" | "similar";
 
 export interface PendingDeletion {
   path: string;
@@ -186,6 +235,12 @@ export const api = {
   navigate: (forward: boolean) => invoke<SessionView>("navigate", { forward }),
   jumpTo: (index: number) => invoke<SessionView>("jump_to", { index }),
   listItems: () => invoke<GridList>("list_items"),
+  startSimilarScan: () => invoke<SimilarStatus>("start_similar_scan"),
+  similarStatus: () => invoke<SimilarStatus>("similar_status"),
+  similarGroups: (maxDistance: number) => invoke<SimilarGroups>("similar_groups", { maxDistance }),
+  deleteSimilar: (generation: number, index: number) => invoke<ActionResult>("delete_similar", { generation, index }),
+  keepOnly: (generation: number, keep: number, others: number[]) =>
+    invoke<KeepOnlyResult>("keep_only", { generation, keep, others }),
   imageInfo: (generation: number, index: number) => invoke<ImageInfo>("image_info", { generation, index }),
   pendingDeletions: () => invoke<DeletionSummary>("pending_deletions"),
   finalizeAndExit: (del: boolean) => invoke<FinalizeReport>("finalize_and_exit", { delete: del }),

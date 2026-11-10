@@ -39,6 +39,8 @@ next = "Right"
 toggle_view = "Ctrl+Shift+F"             # サイドバー型 ⇔ 全画面型
 toggle_paths = "Ctrl+Shift+P"            # パス表示の切り替え
 toggle_grid = "Ctrl+Shift+L"             # 一覧表示の切り替え
+toggle_similar = "Ctrl+Shift+D"          # 類似画像の確認を開く／閉じる
+keep_only = "Ctrl+Shift+K"               # 類似画像の確認で「これだけ残す」
 
 [[targets]]
 key = "1"

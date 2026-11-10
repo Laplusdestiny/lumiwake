@@ -1,6 +1,6 @@
 [package]
 name = "lumiwake"
-version = "0.4.0"
+version = "0.5.0"
 description = "キーボード操作で画像をすばやくフォルダへ振り分けるデスクトップアプリ"
 authors = ["Laplusdestiny"]
 license = "MIT"
