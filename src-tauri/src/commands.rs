@@ -1179,6 +1179,12 @@ mod tests {
         fn pending(&self) -> Vec<PendingDeletion> {
             pending_deletions(self.state()).items
         }
+
+        /// 読み込んだ画像のパス。スキャナは仕分け元を実体のパスにそろえるので、同じようにそろえて比べる
+        /// （Windows の一時フォルダは `RUNNER~1` のような短い名前で渡されることがある）
+        fn scanned(&self, rel: &str) -> PathBuf {
+            dunce::canonicalize(self.path(rel)).unwrap()
+        }
     }
 
     #[test]
@@ -1266,7 +1272,7 @@ mod tests {
         assert_eq!(current_name(&r.view), Some("1.png"), "見ている画像は変えない");
         assert!(r.view.can_undo);
         let pending = f.pending();
-        assert_eq!((pending[0].path.clone(), pending[0].reason), (f.path("src/3.png"), DeletionReason::Similar));
+        assert_eq!((pending[0].path.clone(), pending[0].reason), (f.scanned("src/3.png"), DeletionReason::Similar));
         assert!(f.path("src/3.png").exists(), "ファイルは消さない");
 
         undo(f.state()).unwrap();
@@ -1304,7 +1310,7 @@ mod tests {
         let pending = f.pending();
         assert_eq!(
             pending.iter().map(|p| p.path.clone()).collect::<Vec<_>>(),
-            [f.path("src/1.png"), f.path("src/3.png")]
+            [f.scanned("src/1.png"), f.scanned("src/3.png")]
         );
         assert!(pending.iter().all(|p| p.reason == DeletionReason::Similar));
         assert_eq!(f.groups(), [vec![3, 4]]);
