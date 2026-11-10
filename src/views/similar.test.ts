@@ -434,6 +434,92 @@ describe("削除・これだけ残す・取り消し", () => {
   });
 });
 
+describe("スクロール位置", () => {
+  const scroller = () => slot("similar-scroll")!;
+  let scrolled: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    scrolled = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
+  });
+  afterEach(() => scrolled.mockRestore());
+
+  it("判定中の取り直しで中身が同じなら、描き直さずスクロールもしない", async () => {
+    vi.useFakeTimers();
+    await open(makeSimilarGroups(), makeSimilarStatus({ done: 2, total: 8, running: true }));
+    const before = tile(5);
+    scroller().scrollTop = 400; // 利用者が下へスクロールして見ている
+    scrolled.mockClear();
+
+    api.similarStatus.mockResolvedValue(makeSimilarStatus({ done: 5, total: 8, running: true }));
+    api.similarGroups.mockResolvedValue(makeSimilarGroups());
+    await vi.advanceTimersByTimeAsync(300);
+    expect(clean(slot("similar-progress"))).toBe("判定中 5 / 8");
+    expect(tile(5)).toBe(before);
+    expect(scroller().scrollTop).toBe(400);
+    expect(scrolled).not.toHaveBeenCalled();
+  });
+
+  it("判定中にグループが増えても、見ている位置を保ち、選択中の画像へ戻さない", async () => {
+    vi.useFakeTimers();
+    await open(without(5, 7), makeSimilarStatus({ done: 2, total: 8, running: true }));
+    scroller().scrollTop = 400;
+    scrolled.mockClear();
+
+    api.similarStatus.mockResolvedValue(makeSimilarStatus({ done: 6, total: 8, running: true }));
+    api.similarGroups.mockResolvedValue(makeSimilarGroups());
+    await vi.advanceTimersByTimeAsync(300);
+    expect(shown()).toHaveLength(2);
+    expect(scroller().scrollTop).toBe(400);
+    expect(scrolled).not.toHaveBeenCalled();
+    expect(selected()).toBe(2);
+  });
+
+  it("タイルの削除ボタンを押すと、その画像を選んでから削除する（先頭の選択へ戻らない）", async () => {
+    await open();
+    expect(selected()).toBe(2);
+    api.deleteSimilar.mockResolvedValue({ view: makeSession(), message: null });
+    api.similarGroups.mockResolvedValue(without(7));
+    scroller().scrollTop = 400;
+    v.handleSimilarAction("similar-delete", tile(7)!.querySelector<HTMLElement>('[data-action="similar-delete"]')!);
+    expect(selected()).toBe(7);
+    await vi.waitFor(() => expect(shown()).toEqual([[1, 2, 4]]));
+    expect(scroller().scrollTop).toBe(400);
+  });
+
+  it("タイルの「これだけ残す」ボタンも、その画像を選んでから処理する", async () => {
+    await open();
+    api.keepOnly.mockResolvedValue({ view: makeSession(), deleted: 1, error: null });
+    api.similarGroups.mockResolvedValue(without(5));
+    v.handleSimilarAction("similar-keep", tile(7)!.querySelector<HTMLElement>('[data-action="similar-keep"]')!);
+    expect(selected()).toBe(7);
+    await vi.waitFor(() => expect(api.keepOnly).toHaveBeenCalledWith(1, 7, [5]));
+  });
+
+  it("キーで選択を動かしたときと、削除で選択が移ったときは、選択中の画像を画面内に入れる", async () => {
+    await open();
+    scrolled.mockClear();
+    key("Right");
+    expect(scrolled).toHaveBeenCalledTimes(1);
+    expect(scrolled.mock.contexts[0]).toBe(tile(4));
+
+    scrolled.mockClear();
+    api.deleteSimilar.mockResolvedValue({ view: makeSession(), message: null });
+    api.similarGroups.mockResolvedValue(without(4));
+    key("Delete");
+    await vi.waitFor(() => expect(shown()[0]).toEqual([1, 2]));
+    expect(scrolled).toHaveBeenCalledTimes(1);
+    expect(scrolled.mock.contexts[0]).toBe(tile(2));
+  });
+
+  it("タイルをクリックして選んでも、スクロールは動かさない", async () => {
+    await open();
+    scrolled.mockClear();
+    v.handleSimilarAction("similar-select", tile(5)!);
+    expect(selected()).toBe(5);
+    expect(scrolled).not.toHaveBeenCalled();
+  });
+});
+
 describe("閾値・絞り込み", () => {
   it("スライダーで閾値を変えるとグループを取り直し、値を保存する", async () => {
     await open();

@@ -57,6 +57,8 @@ let filter: Filter = "all";
 let selected: number | null = null;
 let rootEl: HTMLElement | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
+/** 次の描画で、選択中の画像を画面内に入れる（キーでの移動や、削除で選択が移ったとき） */
+let revealSelection = false;
 /** 描いたときのグループと絞り込み。変わったときだけ作り直す */
 let built: { groups: object; filter: Filter } | null = null;
 
@@ -82,6 +84,7 @@ function position(index: number | null): { group: number; member: number } | nul
  */
 function reselect(was: { group: number; member: number } | null): void {
   if (position(selected)) return;
+  revealSelection = true;
   const groups = visible();
   if (groups.length === 0) {
     selected = null;
@@ -117,6 +120,7 @@ export function openSimilar(): Promise<void> {
     built = null;
     selected = store.similar.groups.flatMap((g) => g.members).find((m) => m.current)?.index ?? null;
     reselect(null);
+    revealSelection = true;
     store.screen = "similar";
     notify();
     focusList();
@@ -141,7 +145,8 @@ async function refresh(): Promise<void> {
     const list = await api.similarGroups(threshold);
     if (!store.similar) return;
     store.similar.generation = list.generation;
-    store.similar.groups = list.groups;
+    // 中身が同じなら元の配列のままにして、描き直さない（判定中は 0.3 秒ごとに取り直すため）
+    if (JSON.stringify(list.groups) !== JSON.stringify(store.similar.groups)) store.similar.groups = list.groups;
   } catch (e) {
     toast(errorText(e), "error");
     return;
@@ -244,6 +249,9 @@ function buildGroups(root: HTMLElement): void {
   const sim = store.similar!;
   const groups = visible();
   const el = root.querySelector<HTMLElement>('[data-slot="similar-groups"]')!;
+  // 描き直しても、見ている位置を保つ
+  const scroller = root.querySelector<HTMLElement>('[data-slot="similar-scroll"]')!;
+  const top = scroller.scrollTop;
   el.innerHTML = groups.length
     ? groups
         .map(
@@ -260,6 +268,7 @@ function buildGroups(root: HTMLElement): void {
   el.querySelectorAll("img").forEach((img) =>
     img.addEventListener("error", () => (img.parentElement!.innerHTML = icons.image), { once: true }),
   );
+  scroller.scrollTop = top;
   built = { groups: sim.groups, filter };
 }
 
@@ -272,13 +281,18 @@ function progressText(): string {
   return images > 0 ? `${count} グループ・${formatCount(images)} 枚` : `${count} グループ`;
 }
 
-/** 選択中のタイルに印を付け、見える位置までスクロールする */
+/**
+ * 選択中のタイルに印を付ける。スクロールするのは `revealSelection` のときだけ
+ * （描き直すたびに選択中の画像へ戻すと、スクロールして見ている位置から引き戻してしまう）
+ */
 function updateSelection(): void {
+  const reveal = revealSelection;
+  revealSelection = false;
   rootEl!.querySelectorAll<HTMLElement>(".similar-tile").forEach((el) => {
     const on = Number(el.dataset.index) === selected;
     el.classList.toggle("is-selected", on);
     el.setAttribute("aria-selected", String(on));
-    if (on) el.scrollIntoView?.({ block: "nearest" });
+    if (on && reveal) el.scrollIntoView?.({ block: "nearest" });
   });
 }
 
@@ -310,7 +324,7 @@ export function renderSimilar(root: HTMLElement): void {
 // ---- 操作 ----
 
 function focusList(): void {
-  rootEl?.querySelector<HTMLElement>('[data-slot="similar-scroll"]')?.focus();
+  rootEl?.querySelector<HTMLElement>('[data-slot="similar-scroll"]')?.focus({ preventScroll: true });
 }
 
 function memberOf(index: number | null): { group: SimilarGroup; member: SimilarMember } | null {
@@ -407,6 +421,7 @@ function moveSelection(combo: string): boolean {
   if (combo === "End") [group, member] = [lastGroup, 0];
   const g = groups[Math.min(lastGroup, Math.max(0, group))];
   selected = g.members[Math.min(g.members.length - 1, Math.max(0, member))].index;
+  revealSelection = true;
   updateSelection();
   return true;
 }
@@ -428,6 +443,13 @@ export function handleSimilarKey(combo: string, e: Pick<KeyboardEvent, "repeat">
   return moveSelection(combo);
 }
 
+/** クリックした画像を選ぶ（見えている画像なのでスクロールはしない） */
+function select(index: number): void {
+  if (!memberOf(index)) return;
+  selected = index;
+  updateSelection();
+}
+
 export function handleSimilarAction(action: string, el: HTMLElement): boolean {
   const index = Number(el.dataset.index);
   switch (action) {
@@ -435,14 +457,16 @@ export function handleSimilarAction(action: string, el: HTMLElement): boolean {
       closeSimilar();
       return true;
     case "similar-select":
-      selected = index;
-      updateSelection();
+      select(index);
       focusList();
       return true;
+    // ボタンを押した画像を選んでから処理する（処理のあと、その近くの画像が選ばれる）
     case "similar-delete":
+      select(index);
       deleteOne(index);
       return true;
     case "similar-keep":
+      select(index);
       keepOnly(index);
       return true;
     default:
