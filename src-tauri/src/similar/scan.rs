@@ -45,6 +45,8 @@ struct Inner {
     pending: HashSet<PathBuf>,
     /// 今の epoch で読んでいる途中の枚数
     in_flight: usize,
+    /// 中身を読み比べた結果（パスの組 → 完全に同じか）
+    exact: HashMap<(PathBuf, PathBuf), bool>,
     workers: usize,
     load: Option<PrintFn>,
 }
@@ -82,6 +84,7 @@ impl SimilarScan {
         s.generation = generation;
         s.epoch += 1;
         s.table.clear();
+        s.exact.clear();
         s.queue.clear();
         s.pending.clear();
         s.in_flight = 0;
@@ -96,13 +99,17 @@ impl SimilarScan {
         }
     }
 
-    /// まだ結果のない画像の走査を始める。`generation` が今のものと違えば何もしない
+    /// まだ結果のない画像（前に読めなかったものを含む）の走査を始める。`generation` が今のものと違えば何もしない
     pub fn start(self: &Arc<Self>, generation: u64, jobs: Vec<ScanJob>, workers: usize, load: PrintFn) -> ScanStatus {
         let mut s = self.lock();
         if s.generation != generation {
             return s.status();
         }
         for job in jobs {
+            // 前に読めなかった画像は読み直す（順番が来たときに移動の途中だった、一時的に読めなかった、など）
+            if matches!(s.table.get(&job.key), Some(None)) {
+                s.table.remove(&job.key);
+            }
             if !s.table.contains_key(&job.key) && s.pending.insert(job.key.clone()) {
                 s.queue.push_back(job);
             }
@@ -144,6 +151,25 @@ impl SimilarScan {
 
     pub fn status(&self) -> ScanStatus {
         self.lock().status()
+    }
+
+    /// 2 つのファイルの中身が同じか。一度確かめた組は覚えておき、グループを作り直すたびに読み直さない
+    pub fn exact(&self, a: &Path, b: &Path, compare: impl FnOnce() -> bool) -> bool {
+        let key = if a <= b { (a.to_path_buf(), b.to_path_buf()) } else { (b.to_path_buf(), a.to_path_buf()) };
+        let epoch = {
+            let s = self.lock();
+            if let Some(&known) = s.exact.get(&key) {
+                return known;
+            }
+            s.epoch
+        };
+        // ファイルを読む間はロックを持たない（走査を止めない）
+        let same = compare();
+        let mut s = self.lock();
+        if s.epoch == epoch {
+            s.exact.insert(key, same);
+        }
+        same
     }
 
     /// 判定できた画像の情報
@@ -232,6 +258,56 @@ pub(crate) mod tests {
         assert_eq!(wait(&scan), ScanStatus { generation: 1, done: 5, total: 5, running: false, failed: 1 });
         assert_eq!(scan.get(Path::new("ccc")), None);
         assert!(scan.get(Path::new("eeeee")).is_some());
+    }
+
+    #[test]
+    fn failed_images_are_retried_on_the_next_start() {
+        // 判定の順番が来たときに一時的に読めなかった画像（移動の途中、SMB の一時的な失敗など）
+        let scan = Arc::new(SimilarScan::new());
+        scan.reset(1);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let flaky = |calls: &Arc<AtomicUsize>, fail: bool| -> PrintFn {
+            let calls = calls.clone();
+            Arc::new(move |p: &Path| {
+                calls.fetch_add(1, SeqCst);
+                if fail && p == Path::new("bb") {
+                    Err("今は読めない".into())
+                } else {
+                    Ok(print(1))
+                }
+            })
+        };
+        scan.start(1, jobs(&FIVE), 2, flaky(&calls, true));
+        assert_eq!(wait(&scan).failed, 1);
+        // 失敗した画像だけをもう一度読む
+        let st = scan.start(1, jobs(&FIVE), 2, flaky(&calls, false));
+        assert_eq!((st.done, st.total, st.failed), (4, 5, 0), "読み直す分は判定待ちに戻す");
+        assert_eq!(wait(&scan), ScanStatus { generation: 1, done: 5, total: 5, running: false, failed: 0 });
+        assert!(scan.get(Path::new("bb")).is_some());
+        assert_eq!(calls.load(SeqCst), 6);
+    }
+
+    #[test]
+    fn exact_match_results_are_remembered_until_the_folder_is_reloaded() {
+        let scan = SimilarScan::new();
+        scan.reset(1);
+        let reads = AtomicUsize::new(0);
+        let compare = |answer: bool| {
+            reads.fetch_add(1, SeqCst);
+            answer
+        };
+        let (a, b, c) = (Path::new("a"), Path::new("b"), Path::new("c"));
+        assert!(scan.exact(a, b, || compare(true)));
+        assert!(scan.exact(a, b, || compare(false)), "覚えた結果を返し、読み直さない");
+        assert!(scan.exact(b, a, || compare(false)), "向きを変えても同じ組");
+        assert!(!scan.exact(a, c, || compare(false)));
+        assert_eq!(reads.load(SeqCst), 2);
+
+        scan.renumber(2);
+        assert!(scan.exact(a, b, || compare(false)), "並び順を変えても覚えている");
+        scan.reset(3);
+        assert!(!scan.exact(a, b, || compare(false)), "読み直したら確かめ直す");
+        assert_eq!(reads.load(SeqCst), 3);
     }
 
     #[test]

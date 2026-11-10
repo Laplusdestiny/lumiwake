@@ -561,9 +561,10 @@ pub fn similar_status(state: State<'_, AppState>) -> ScanStatus {
     state.similar.status()
 }
 
-/// 判定を終えた画像のうち、まだ振り分けていないものを類似グループにまとめる（判定の途中でも呼べる）
+/// 判定を終えた画像のうち、まだ振り分けていないものを類似グループにまとめる（判定の途中でも呼べる）。
+/// 完全一致の確認でファイルを読むことがあるので、画面を止めないよう非同期のコマンドにする
 #[tauri::command]
-pub fn similar_groups(state: State<'_, AppState>, max_distance: u32) -> CmdResult<SimilarGroups> {
+pub async fn similar_groups(state: State<'_, AppState>, max_distance: u32) -> CmdResult<SimilarGroups> {
     // ファイルを読み比べる間（完全一致の確認）にセッションを止めないよう、必要な情報を写してから判定する
     let (generation, current, candidates) = {
         let guard = state.session();
@@ -582,7 +583,9 @@ pub fn similar_groups(state: State<'_, AppState>, max_distance: u32) -> CmdResul
         (s.generation, s.session.current(), candidates)
     };
     let by_index = |index: usize| candidates.iter().find(|c| c.index == index);
-    let groups = similar::group::group(&candidates, max_distance.min(MAX_DISTANCE_LIMIT), similar::group::same_bytes)
+    // 一度読み比べた組は覚えておく（閾値を動かすたび・操作のたびに読み直さない）
+    let same_bytes = |a: &Path, b: &Path| state.similar.exact(a, b, || similar::group::same_bytes(a, b));
+    let groups = similar::group::group(&candidates, max_distance.min(MAX_DISTANCE_LIMIT), same_bytes)
         .into_iter()
         .map(|g| SimilarGroup {
             members: g
@@ -1138,6 +1141,10 @@ mod tests {
     use crate::similar::MAX_DISTANCE_LIMIT;
     use std::time::{Duration, Instant};
 
+    fn groups_at(f: &Fixture, max_distance: u32) -> CmdResult<SimilarGroups> {
+        tauri::async_runtime::block_on(similar_groups(f.state(), max_distance))
+    }
+
     impl Fixture {
         /// 既定の 3 枚（中身がまったく同じ 1.png〜3.png）に、同じ絵の大小 2 枚を足して読み込む。
         /// 並びは 1.png, 2.png, 3.png, dup-a.png, dup-b.png（番号 0〜4）
@@ -1165,7 +1172,7 @@ mod tests {
         }
 
         fn groups(&self) -> Vec<Vec<usize>> {
-            let list = similar_groups(self.state(), crate::similar::DEFAULT_MAX_DISTANCE).unwrap();
+            let list = groups_at(self, crate::similar::DEFAULT_MAX_DISTANCE).unwrap();
             list.groups.iter().map(|g| g.members.iter().map(|m| m.index).collect()).collect()
         }
 
@@ -1178,7 +1185,7 @@ mod tests {
     fn similar_commands_fail_before_loading_a_folder() {
         let f = Fixture::new();
         assert!(start_similar_scan(f.state()).is_err());
-        assert!(similar_groups(f.state(), 6).is_err());
+        assert!(groups_at(&f, 6).is_err());
         assert!(delete_similar(f.state(), 1, 0).is_err());
         assert!(keep_only(f.state(), 1, 0, vec![1]).is_err());
         let st = similar_status(f.state());
@@ -1192,7 +1199,7 @@ mod tests {
         let st = f.scan();
         assert_eq!((st.generation, st.done, st.total, st.failed), (v.generation, 5, 5, 0));
 
-        let list = similar_groups(f.state(), crate::similar::DEFAULT_MAX_DISTANCE).unwrap();
+        let list = groups_at(&f, crate::similar::DEFAULT_MAX_DISTANCE).unwrap();
         assert_eq!(list.generation, v.generation);
         assert_eq!(f.groups(), [vec![0, 1, 2], vec![3, 4]]);
 
@@ -1244,7 +1251,7 @@ mod tests {
         let f = Fixture::new();
         f.start_with_duplicates();
         f.scan();
-        let count = |d: u32| similar_groups(f.state(), d).unwrap().groups.len();
+        let count = |d: u32| groups_at(&f, d).unwrap().groups.len();
         assert_eq!(count(999), count(MAX_DISTANCE_LIMIT));
         assert!(count(0) >= 1, "距離 0 でも中身が同じ 3 枚はグループになる");
     }
