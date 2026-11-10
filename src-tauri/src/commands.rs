@@ -4,8 +4,13 @@
 
 use crate::config::{self, Config, Issue};
 use crate::decoder::{self, FormatSupport};
-use crate::fileops::{self, Action, ConflictChoice, FinalizeReport, HistoryKind, PendingDeletion, Session, Status};
+use crate::fileops::{
+    self, Action, ConflictChoice, DeletionReason, FinalizeReport, HistoryKind, PendingDeletion, Session, Status,
+};
 use crate::scanner::{self, ScanOptions};
+use crate::similar::group::Candidate;
+use crate::similar::scan::{ScanJob, ScanStatus};
+use crate::similar::{self, MAX_DISTANCE_LIMIT};
 use crate::state::{location, AppState, SessionState};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -88,6 +93,8 @@ fn apply_config(state: &AppState, config: Config, load_error: Option<String>) {
             s.session.reorder_open(|paths| scanner::sort_paths(paths, order));
             // 画像の番号が変わるので、画面が持っている古い番号の URL を無効にする
             s.generation = state.next_generation();
+            // 類似判定の結果はパスで持っているので、番号が変わっても使い続ける
+            state.similar.renumber(s.generation);
             state.schedule_prefetch(s, prefetch);
         }
     }
@@ -330,6 +337,7 @@ pub fn start_session(state: State<'_, AppState>, source: String, include_subdirs
     state.cache.clear();
     state.grid_cache.clear();
     let generation = state.next_generation();
+    state.similar.reset(generation);
     let session = Session::new(Arc::new(fileops::RealFs), result.images, trash);
     let old = state.session().replace(SessionState { session, generation, source, unsupported: result.unsupported });
     if let Some(old) = old {
@@ -485,6 +493,180 @@ pub fn list_items(state: State<'_, AppState>) -> CmdResult<GridList> {
         })
         .collect();
     Ok(GridList { generation: s.generation, current: s.session.current(), items })
+}
+
+// ---- 類似画像の確認 ----
+
+/// 類似判定を同時にいくつまで走らせるか（原寸でデコードするのでメモリを使う）
+const SIMILAR_WORKERS: usize = 3;
+
+const STALE_SIMILAR: &str = "画像の並びが変わりました。類似画像を開き直してください";
+const INVALID_SELECTION: &str = "選んだ画像の状態が変わりました。もう一度選んでください";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarMember {
+    index: usize,
+    name: String,
+    width: u32,
+    height: u32,
+    size: u64,
+    /// グループ内で最も近い画像との類似度（%）
+    similarity: u8,
+    largest_resolution: bool,
+    largest_size: bool,
+    /// 仕分け画面で見ている画像
+    current: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarGroup {
+    members: Vec<SimilarMember>,
+    exact: bool,
+    same_size: bool,
+    same_resolution: bool,
+    similar_names: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarGroups {
+    generation: u64,
+    groups: Vec<SimilarGroup>,
+}
+
+/// まだ振り分けていない画像の類似判定を、バックグラウンドで始める（判定済みの画像は読み直さない）
+#[tauri::command]
+pub fn start_similar_scan(state: State<'_, AppState>) -> CmdResult<ScanStatus> {
+    let (generation, jobs) = {
+        let guard = state.session();
+        let s = guard.as_ref().ok_or("仕分け元フォルダが読み込まれていません")?;
+        let jobs = s
+            .session
+            .items()
+            .iter()
+            .filter(|item| item.status.is_open())
+            .map(|item| ScanJob { key: item.path.clone(), path: location(&item.path, &item.status).to_path_buf() })
+            .collect();
+        (s.generation, jobs)
+    };
+    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, SIMILAR_WORKERS);
+    let registry = state.registry.clone();
+    Ok(state.similar.start(generation, jobs, workers, Arc::new(move |p: &Path| similar::fingerprint(&registry, p))))
+}
+
+#[tauri::command]
+pub fn similar_status(state: State<'_, AppState>) -> ScanStatus {
+    state.similar.status()
+}
+
+/// 判定を終えた画像のうち、まだ振り分けていないものを類似グループにまとめる（判定の途中でも呼べる）
+#[tauri::command]
+pub fn similar_groups(state: State<'_, AppState>, max_distance: u32) -> CmdResult<SimilarGroups> {
+    // ファイルを読み比べる間（完全一致の確認）にセッションを止めないよう、必要な情報を写してから判定する
+    let (generation, current, candidates) = {
+        let guard = state.session();
+        let s = guard.as_ref().ok_or("仕分け元フォルダが読み込まれていません")?;
+        let candidates: Vec<Candidate> = s
+            .session
+            .items()
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.status.is_open())
+            .filter_map(|(index, item)| {
+                let print = state.similar.get(&item.path)?;
+                Some(Candidate { index, path: item.path.clone(), print })
+            })
+            .collect();
+        (s.generation, s.session.current(), candidates)
+    };
+    let by_index = |index: usize| candidates.iter().find(|c| c.index == index);
+    let groups = similar::group::group(&candidates, max_distance.min(MAX_DISTANCE_LIMIT), similar::group::same_bytes)
+        .into_iter()
+        .map(|g| SimilarGroup {
+            members: g
+                .members
+                .iter()
+                .filter_map(|m| {
+                    let c = by_index(m.index)?;
+                    Some(SimilarMember {
+                        index: m.index,
+                        name: fileops::file_name(&c.path),
+                        width: c.print.width,
+                        height: c.print.height,
+                        size: c.print.size,
+                        similarity: m.similarity,
+                        largest_resolution: m.largest_resolution,
+                        largest_size: m.largest_size,
+                        current: current == Some(m.index),
+                    })
+                })
+                .collect(),
+            exact: g.exact,
+            same_size: g.same_size,
+            same_resolution: g.same_resolution,
+            similar_names: g.similar_names,
+        })
+        .collect();
+    Ok(SimilarGroups { generation, groups })
+}
+
+/// 画面が持っている画像の番号が今のものか（並び順を変えると番号が変わる）
+fn check_generation(s: &SessionState, generation: u64) -> Result<(), String> {
+    if s.generation == generation {
+        Ok(())
+    } else {
+        Err(STALE_SIMILAR.into())
+    }
+}
+
+/// 類似画像の確認画面から、番号で指定した 1 枚を削除予定にする
+#[tauri::command]
+pub fn delete_similar(state: State<'_, AppState>, generation: u64, index: usize) -> CmdResult<ActionResult> {
+    let (_, view) = with_session(&state, |s| {
+        check_generation(s, generation)?;
+        s.session.delete_at(index, DeletionReason::Similar).map_err(|e| e.to_string())
+    })?;
+    Ok(ActionResult { view, message: None })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeepOnlyResult {
+    view: SessionView,
+    /// 削除予定にした枚数
+    deleted: usize,
+    /// 途中で失敗したときの理由（そこまでの分は削除予定のまま。取り消しで戻せる）
+    error: Option<String>,
+}
+
+/// `keep` を残し、同じグループの `others` を削除予定にする。
+/// 対象が 1 枚でもおかしければ何もしない。途中で失敗したらそこで止める
+#[tauri::command]
+pub fn keep_only(
+    state: State<'_, AppState>,
+    generation: u64,
+    keep: usize,
+    others: Vec<usize>,
+) -> CmdResult<KeepOnlyResult> {
+    let ((deleted, error), view) = with_session(&state, |s| {
+        check_generation(s, generation)?;
+        let open = |i: &usize| s.session.items().get(*i).is_some_and(|item| item.status.is_open());
+        let distinct = others.iter().enumerate().all(|(n, i)| *i != keep && !others[..n].contains(i));
+        if others.is_empty() || !distinct || !open(&keep) || !others.iter().all(open) {
+            return Err(INVALID_SELECTION.into());
+        }
+        let mut deleted = 0;
+        for &index in &others {
+            if let Err(e) = s.session.delete_at(index, DeletionReason::Similar) {
+                return Ok((deleted, Some(e.to_string())));
+            }
+            deleted += 1;
+        }
+        Ok((deleted, None))
+    })?;
+    Ok(KeepOnlyResult { view, deleted, error })
 }
 
 #[derive(Serialize)]
@@ -946,5 +1128,267 @@ mod tests {
         let stale = tauri::async_runtime::block_on(image_info(f.state(), v.generation + 100, 0));
         assert!(stale.err().unwrap().contains("古い画面"));
         assert!(tauri::async_runtime::block_on(image_info(f.state(), v.generation, 99)).is_err());
+    }
+
+    // ---- 類似画像 ----
+
+    use crate::fileops::DeletionReason;
+    use crate::similar::hash::tests::scene;
+    use crate::similar::scan::ScanStatus;
+    use crate::similar::MAX_DISTANCE_LIMIT;
+    use std::time::{Duration, Instant};
+
+    impl Fixture {
+        /// 既定の 3 枚（中身がまったく同じ 1.png〜3.png）に、同じ絵の大小 2 枚を足して読み込む。
+        /// 並びは 1.png, 2.png, 3.png, dup-a.png, dup-b.png（番号 0〜4）
+        fn start_with_duplicates(&self) -> SessionView {
+            let big = scene(7, 160, 120);
+            big.save(self.path("src/dup-a.png")).unwrap();
+            image::imageops::resize(&big, 80, 60, image::imageops::FilterType::Triangle)
+                .save(self.path("src/dup-b.png"))
+                .unwrap();
+            self.start()
+        }
+
+        /// 判定を始めて、終わるまで待つ
+        fn scan(&self) -> ScanStatus {
+            start_similar_scan(self.state()).unwrap();
+            let start = Instant::now();
+            loop {
+                let st = similar_status(self.state());
+                if !st.running {
+                    return st;
+                }
+                assert!(start.elapsed() < Duration::from_secs(20), "判定が終わらない: {st:?}");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+
+        fn groups(&self) -> Vec<Vec<usize>> {
+            let list = similar_groups(self.state(), crate::similar::DEFAULT_MAX_DISTANCE).unwrap();
+            list.groups.iter().map(|g| g.members.iter().map(|m| m.index).collect()).collect()
+        }
+
+        fn pending(&self) -> Vec<PendingDeletion> {
+            pending_deletions(self.state()).items
+        }
+    }
+
+    #[test]
+    fn similar_commands_fail_before_loading_a_folder() {
+        let f = Fixture::new();
+        assert!(start_similar_scan(f.state()).is_err());
+        assert!(similar_groups(f.state(), 6).is_err());
+        assert!(delete_similar(f.state(), 1, 0).is_err());
+        assert!(keep_only(f.state(), 1, 0, vec![1]).is_err());
+        let st = similar_status(f.state());
+        assert_eq!((st.done, st.total, st.running), (0, 0, false), "状態は読み込み前でも返す");
+    }
+
+    #[test]
+    fn scan_then_groups_report_members_and_evidence() {
+        let f = Fixture::new();
+        let v = f.start_with_duplicates();
+        let st = f.scan();
+        assert_eq!((st.generation, st.done, st.total, st.failed), (v.generation, 5, 5, 0));
+
+        let list = similar_groups(f.state(), crate::similar::DEFAULT_MAX_DISTANCE).unwrap();
+        assert_eq!(list.generation, v.generation);
+        assert_eq!(f.groups(), [vec![0, 1, 2], vec![3, 4]]);
+
+        // 中身がまったく同じ連番の 3 枚
+        let same = &list.groups[0];
+        assert!(same.exact && same.same_size && same.same_resolution && same.similar_names);
+        let m = &same.members[0];
+        assert_eq!((m.name.as_str(), m.width, m.height, m.similarity), ("1.png", 8, 6, 100));
+        assert_eq!(m.size, std::fs::metadata(f.path("src/1.png")).unwrap().len());
+        assert!(m.current && !same.members[1].current, "見ている画像に印を付ける");
+        assert!(same.members.iter().all(|m| !m.largest_resolution && !m.largest_size));
+
+        // 同じ絵を縮めたもの
+        let resized = &list.groups[1];
+        assert!(!resized.exact && !resized.same_size && !resized.same_resolution && !resized.similar_names);
+        assert_eq!(resized.members[0].name, "dup-a.png");
+        assert!(resized.members[0].largest_resolution && resized.members[0].largest_size);
+        assert!(!resized.members[1].largest_resolution);
+        assert!(resized.members[0].similarity >= 91);
+    }
+
+    #[test]
+    fn groups_use_only_what_has_been_scanned_and_skip_unreadable_images() {
+        let f = Fixture::new();
+        std::fs::write(f.path("src/broken.png"), "画像ではない").unwrap();
+        f.start();
+        assert!(f.groups().is_empty(), "判定の前はグループなし");
+        let st = f.scan();
+        assert_eq!((st.done, st.total, st.failed), (4, 4, 1), "読めない画像は失敗に数える");
+        assert_eq!(f.groups(), [vec![0, 1, 2]], "読めた画像だけでグループにする");
+    }
+
+    #[test]
+    fn groups_leave_out_processed_images() {
+        let f = Fixture::new();
+        let v = f.start_with_duplicates();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 }); // 1.png を振り分ける
+        assert_eq!(f.groups(), [vec![1, 2], vec![3, 4]]);
+        delete_similar(f.state(), v.generation, 1).unwrap();
+        assert_eq!(f.groups(), [vec![3, 4]], "1 枚になったグループは出さない");
+        // 移動した画像は、もう一度判定を始めても対象にしない
+        assert_eq!(f.scan().total, 5);
+        assert_eq!(f.groups(), [vec![3, 4]]);
+    }
+
+    #[test]
+    fn max_distance_is_clamped_to_the_limit() {
+        let f = Fixture::new();
+        f.start_with_duplicates();
+        f.scan();
+        let count = |d: u32| similar_groups(f.state(), d).unwrap().groups.len();
+        assert_eq!(count(999), count(MAX_DISTANCE_LIMIT));
+        assert!(count(0) >= 1, "距離 0 でも中身が同じ 3 枚はグループになる");
+    }
+
+    #[test]
+    fn delete_similar_marks_the_image_and_can_be_undone() {
+        let f = Fixture::new();
+        let v = f.start_with_duplicates();
+        f.scan();
+        let r = delete_similar(f.state(), v.generation, 2).unwrap();
+        assert_eq!(r.view.pending_deletions, 1);
+        assert_eq!(current_name(&r.view), Some("1.png"), "見ている画像は変えない");
+        assert!(r.view.can_undo);
+        let pending = f.pending();
+        assert_eq!((pending[0].path.clone(), pending[0].reason), (f.path("src/3.png"), DeletionReason::Similar));
+        assert!(f.path("src/3.png").exists(), "ファイルは消さない");
+
+        undo(f.state()).unwrap();
+        assert!(f.pending().is_empty());
+        assert_eq!(f.groups()[0], [0, 1, 2]);
+
+        // 処理済みの画像・範囲外は断る（取り消した 3.png を見ているので、それを振り分ける）
+        let moved = f.act(ActionArg::Move { target: 0 });
+        assert!(f.path("a/3.png").exists() && moved.pending_deletions == 0);
+        assert!(delete_similar(f.state(), v.generation, 2).err().unwrap().contains("振り分け済み"));
+        assert!(delete_similar(f.state(), v.generation, 99).is_err());
+    }
+
+    #[test]
+    fn delete_similar_moves_to_the_delete_folder() {
+        let f = Fixture::new();
+        f.set_delete_folder("trash");
+        let v = f.start_with_duplicates();
+        delete_similar(f.state(), v.generation, 4).unwrap();
+        assert!(f.path("trash/dup-b.png").exists());
+        assert!(!f.path("src/dup-b.png").exists());
+        undo(f.state()).unwrap();
+        assert!(f.path("src/dup-b.png").exists());
+    }
+
+    #[test]
+    fn keep_only_deletes_the_rest_of_the_group() {
+        let f = Fixture::new();
+        let v = f.start_with_duplicates();
+        f.scan();
+        let r = keep_only(f.state(), v.generation, 1, vec![0, 2]).unwrap();
+        assert_eq!((r.deleted, r.error.as_deref()), (2, None));
+        assert_eq!(r.view.pending_deletions, 2);
+        assert_eq!(current_name(&r.view), Some("2.png"), "見ていた画像を消したので、残した画像へ進む");
+        let pending = f.pending();
+        assert_eq!(
+            pending.iter().map(|p| p.path.clone()).collect::<Vec<_>>(),
+            [f.path("src/1.png"), f.path("src/3.png")]
+        );
+        assert!(pending.iter().all(|p| p.reason == DeletionReason::Similar));
+        assert_eq!(f.groups(), [vec![3, 4]]);
+
+        // 取り消しは 1 枚ずつ
+        undo(f.state()).unwrap();
+        assert_eq!(f.pending().len(), 1);
+        undo(f.state()).unwrap();
+        assert!(f.pending().is_empty());
+    }
+
+    #[test]
+    fn keep_only_validates_before_deleting_anything() {
+        let f = Fixture::new();
+        let v = f.start_with_duplicates();
+        let g = v.generation;
+        f.act(ActionArg::Skip); // 1.png は保留（対象にできる）
+        f.act(ActionArg::Move { target: 0 }); // 2.png は処理済み
+        let rejected = [
+            (0, vec![2, 0]),  // 残す画像が削除する側にも入っている
+            (0, vec![2, 2]),  // 重複
+            (0, vec![2, 1]),  // 処理済みを含む
+            (1, vec![0, 2]),  // 残す画像が処理済み
+            (0, vec![2, 99]), // 範囲外
+            (0, vec![]),      // 削除する画像がない
+        ];
+        for (keep, others) in rejected {
+            let err = keep_only(f.state(), g, keep, others.clone()).err();
+            assert!(err.is_some_and(|e| e.contains("もう一度選んでください")), "{keep} {others:?}");
+        }
+        assert!(f.pending().is_empty(), "1 枚も削除予定にしない");
+        // 保留の画像は対象にできる
+        assert_eq!(keep_only(f.state(), g, 2, vec![0]).unwrap().deleted, 1);
+    }
+
+    #[test]
+    fn keep_only_stops_at_the_first_failure_and_reports_it() {
+        let f = Fixture::new();
+        f.set_delete_folder("trash");
+        let v = f.start_with_duplicates();
+        std::fs::remove_dir(f.path("trash")).unwrap();
+        let r = keep_only(f.state(), v.generation, 0, vec![1, 2]).unwrap();
+        assert_eq!(r.deleted, 0);
+        assert!(r.error.as_deref().is_some_and(|e| e.contains("見つかりません")), "{:?}", r.error);
+        assert!(f.pending().is_empty());
+        assert!(f.path("src/2.png").exists() && f.path("src/3.png").exists());
+    }
+
+    #[test]
+    fn stale_generation_is_rejected_after_reordering() {
+        let f = Fixture::new();
+        let old = f.start_with_duplicates();
+        f.scan();
+        // 並び順を変えると画像の番号が変わる（番号 0 は dup-b.png になる）
+        let mut config = f.config().config;
+        config.general.sort_order = config::SortOrder::NameDesc;
+        save_config(f.state(), config).unwrap();
+        let now = get_session(f.state()).unwrap();
+        assert_ne!(now.generation, old.generation);
+        assert_eq!(current_name(&now), Some("dup-b.png"));
+
+        let err = delete_similar(f.state(), old.generation, 0).err().unwrap();
+        assert!(err.contains("開き直してください"), "{err}");
+        assert!(keep_only(f.state(), old.generation, 0, vec![1]).is_err());
+        assert!(f.pending().is_empty(), "古い番号で別の画像を削除予定にしない");
+        assert!(delete_similar(f.state(), now.generation, 0).is_ok());
+    }
+
+    #[test]
+    fn rescanning_after_reorder_reuses_fingerprints() {
+        let f = Fixture::new();
+        f.start_with_duplicates();
+        f.scan();
+        let mut config = f.config().config;
+        config.general.sort_order = config::SortOrder::NameDesc;
+        save_config(f.state(), config).unwrap();
+        let generation = get_session(f.state()).unwrap().generation;
+
+        let st = start_similar_scan(f.state()).unwrap();
+        assert_eq!(st, ScanStatus { generation, done: 5, total: 5, running: false, failed: 0 }, "読み直さない");
+        assert_eq!(f.groups(), [vec![0, 1], vec![2, 3, 4]], "新しい番号でグループを返す");
+    }
+
+    #[test]
+    fn loading_a_folder_again_discards_the_scan() {
+        let f = Fixture::new();
+        f.start_with_duplicates();
+        assert_eq!(f.scan().done, 5);
+        let v = f.start();
+        let st = similar_status(f.state());
+        assert_eq!((st.generation, st.done, st.total), (v.generation, 0, 0));
+        assert!(f.groups().is_empty());
     }
 }
