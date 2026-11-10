@@ -165,3 +165,61 @@ describe("最近使ったフォルダ", () => {
     expect(root.querySelectorAll(".recent-item")).toHaveLength(2);
   });
 });
+
+describe("サブフォルダのチェック", () => {
+  const box = () => root.querySelector<HTMLInputElement>("#include-subdirs")!;
+  /** 利用者がチェックを切り替える */
+  const toggle = (checked: boolean) => {
+    box().checked = checked;
+    box().dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  beforeEach(() => {
+    actions.startSession.mockResolvedValue(undefined);
+    const cfg = makeConfig({ source_dir: "/home/u/inbox", include_subdirs: false });
+    cfg.config.general.recent_sources = ["/home/u/inbox", "/home/u/other"];
+    store.config = cfg;
+    renderStart(root);
+  });
+
+  it("チェックを入れてからフォルダを選び直しても、チェックは外れない", async () => {
+    toggle(true);
+    dialog.open.mockResolvedValue("/home/u/picked");
+    await pickSource();
+    expect(box().checked).toBe(true);
+    chooseSource("/home/u/other");
+    expect(box().checked).toBe(true);
+    moveRecentSource(-1);
+    expect(box().checked).toBe(true);
+
+    await startFromForm();
+    expect(actions.startSession).toHaveBeenCalledWith("/home/u/inbox", true);
+  });
+
+  it("履歴から外しても、チェックは外れない", async () => {
+    toggle(true);
+    api.forgetSource.mockResolvedValue(store.config);
+    await forgetSource("/home/u/other");
+    renderStart(root);
+    expect(box().checked).toBe(true);
+    await startFromForm(); // 次のテストに持ち越さない
+  });
+
+  it("チェックを外してからフォルダを選び直しても、チェックは戻らない", async () => {
+    store.config = makeConfig({ source_dir: "/home/u/inbox", include_subdirs: true });
+    renderStart(root);
+    toggle(false);
+    chooseSource("/home/u/other");
+    expect(box().checked).toBe(false);
+    await startFromForm();
+    expect(actions.startSession).toHaveBeenCalledWith("/home/u/other", false);
+  });
+
+  it("読み込みを始めたら、次に開始画面を開いたときは設定の値に戻る", async () => {
+    toggle(true);
+    await startFromForm();
+    // 読み込みで設定が保存される（ここでは保存されなかった場合を見る）
+    renderStart(root);
+    expect(box().checked).toBe(false);
+  });
+});
