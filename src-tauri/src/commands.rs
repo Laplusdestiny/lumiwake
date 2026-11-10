@@ -497,9 +497,6 @@ pub fn list_items(state: State<'_, AppState>) -> CmdResult<GridList> {
 
 // ---- 類似画像の確認 ----
 
-/// 類似判定を同時にいくつまで走らせるか（原寸でデコードするのでメモリを使う）
-const SIMILAR_WORKERS: usize = 3;
-
 const STALE_SIMILAR: &str = "画像の並びが変わりました。類似画像を開き直してください";
 const INVALID_SELECTION: &str = "選んだ画像の状態が変わりました。もう一度選んでください";
 
@@ -551,7 +548,7 @@ pub fn start_similar_scan(state: State<'_, AppState>) -> CmdResult<ScanStatus> {
             .collect();
         (s.generation, jobs)
     };
-    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, SIMILAR_WORKERS);
+    let workers = similar::scan_workers(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
     let registry = state.registry.clone();
     Ok(state.similar.start(generation, jobs, workers, Arc::new(move |p: &Path| similar::fingerprint(&registry, p))))
 }
