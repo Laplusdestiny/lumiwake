@@ -123,6 +123,10 @@ pub struct ActionKeys {
     pub toggle_paths: String,
     /// 一覧表示の切り替え
     pub toggle_grid: String,
+    /// 類似画像の確認画面の切り替え
+    pub toggle_similar: String,
+    /// 類似画像の確認画面で、選んだ画像だけを残す
+    pub keep_only: String,
 }
 
 impl Default for ActionKeys {
@@ -138,12 +142,15 @@ impl Default for ActionKeys {
             toggle_paths: "Ctrl+Shift+P".into(),
             // Ctrl+Shift+G は WebView の検索と重なるので避ける
             toggle_grid: "Ctrl+Shift+L".into(),
+            toggle_similar: "Ctrl+Shift+D".into(),
+            // グループの残りをまとめて削除予定にするので、押し間違えにくい組み合わせキーにする
+            keep_only: "Ctrl+Shift+K".into(),
         }
     }
 }
 
 impl ActionKeys {
-    fn entries(&self) -> [(&'static str, &str); 8] {
+    fn entries(&self) -> [(&'static str, &str); 10] {
         [
             ("スキップ", &self.skip),
             ("削除", &self.delete),
@@ -153,10 +160,12 @@ impl ActionKeys {
             ("表示モード切り替え", &self.toggle_view),
             ("パス表示の切り替え", &self.toggle_paths),
             ("一覧表示の切り替え", &self.toggle_grid),
+            ("類似画像の確認", &self.toggle_similar),
+            ("これだけ残す", &self.keep_only),
         ]
     }
 
-    fn entries_mut(&mut self) -> [&mut String; 8] {
+    fn entries_mut(&mut self) -> [&mut String; 10] {
         [
             &mut self.skip,
             &mut self.delete,
@@ -166,6 +175,8 @@ impl ActionKeys {
             &mut self.toggle_view,
             &mut self.toggle_paths,
             &mut self.toggle_grid,
+            &mut self.toggle_similar,
+            &mut self.keep_only,
         ]
     }
 }
@@ -628,6 +639,25 @@ mod tests {
         let text = toml::to_string(&c).unwrap();
         assert!(text.contains("include_targets = true"), "{text}");
         assert!(parse(&text, Path::new("x")).unwrap().general.include_targets);
+    }
+
+    #[test]
+    fn toggle_similar_and_keep_only_default_and_are_checked_for_duplicates() {
+        // 項目のない既存の設定ファイルは既定値で補う
+        let c = parse("[keys]\ntoggle_view = \"Alt+V\"\n", Path::new("x")).unwrap();
+        assert_eq!((c.keys.toggle_similar.as_str(), c.keys.keep_only.as_str()), ("Ctrl+Shift+D", "Ctrl+Shift+K"));
+        assert!(Config::default().validate().is_empty(), "既定のキーどうしは重ならず、予約キーでもない");
+        // ほかのキーとの重複を検出する
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = Config { targets: vec![target("1", "風景", dir.path())], ..Default::default() };
+        c.keys.toggle_similar = "1".into();
+        c.keys.keep_only = c.keys.undo.clone();
+        let issues = c.validate();
+        assert!(issues.iter().any(|i| i.key.as_deref() == Some("1") && i.message.contains("類似画像の確認")));
+        assert!(issues.iter().any(|i| i.key.as_deref() == Some("Ctrl+Z") && i.message.contains("これだけ残す")));
+        // TOML に書き出して読み直しても同じ
+        let text = toml::to_string(&Config::default()).unwrap();
+        assert!(text.contains("toggle_similar = \"Ctrl+Shift+D\"") && text.contains("keep_only = \"Ctrl+Shift+K\""));
     }
 
     #[test]

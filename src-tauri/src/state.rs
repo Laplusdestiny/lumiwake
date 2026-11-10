@@ -3,6 +3,7 @@
 use crate::config::{self, Config};
 use crate::decoder::{make_preview, DecodeLimit, PrefetchJob, Prefetcher, PreviewCache, Registry, ThumbCache};
 use crate::fileops::{Session, Status};
+use crate::similar::scan::SimilarScan;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -41,6 +42,8 @@ pub struct AppState {
     /// 一覧用サムネイルのキャッシュ（先読みのキャッシュとは別）
     pub grid_cache: Arc<ThumbCache>,
     pub grid_limit: DecodeLimit,
+    /// 類似画像の判定用の情報（バックグラウンドで集める）
+    pub similar: Arc<SimilarScan>,
     prefetcher: Prefetcher,
     /// true のときだけウィンドウを閉じてよい（削除予定の確認を済ませた）
     pub allow_exit: AtomicBool,
@@ -68,6 +71,7 @@ impl AppState {
             cache,
             grid_cache: Arc::new(ThumbCache::new(GRID_CACHE_CAPACITY)),
             grid_limit: DecodeLimit::new(GRID_DECODE_LIMIT),
+            similar: Arc::new(SimilarScan::new()),
             prefetcher,
             allow_exit: AtomicBool::new(false),
             next_generation: AtomicU64::new(1),

@@ -10,8 +10,10 @@ const actions = vi.hoisted(() => ({
 const api = vi.hoisted(() => ({ setShowPaths: vi.fn() }));
 const toast = vi.hoisted(() => vi.fn());
 const grid = vi.hoisted(() => ({ openGrid: vi.fn() }));
+const similar = vi.hoisted(() => ({ openSimilar: vi.fn() }));
 vi.mock("../actions", () => actions);
 vi.mock("./grid", () => grid);
+vi.mock("./similar", () => similar);
 vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), api }));
 vi.mock("../toast", () => ({ toast }));
 
@@ -52,6 +54,31 @@ describe("一覧", () => {
     store.session = makeSession({ current: null });
     expect(key("Ctrl+Shift+L")).toBe(true);
     expect(grid.openGrid).toHaveBeenCalled();
+  });
+});
+
+describe("類似画像", () => {
+  it("類似画像ボタンを出し、toggle_similar で確認画面を開く", () => {
+    renderSorter(root);
+    const btn = root.querySelector<HTMLElement>('[data-action="similar"]');
+    expect(btn?.title).toBe("類似画像（Ctrl+Shift+D）");
+    expect(text('[data-slot="hints"]')).toContain("Ctrl+Shift+D 類似画像");
+    expect(key("Ctrl+Shift+D")).toBe(true);
+    expect(similar.openSimilar).toHaveBeenCalled();
+  });
+
+  it("全画面型にも類似画像ボタンを出し、すべて処理し終えた後も開ける", () => {
+    store.config = makeConfig({ view_mode: "focus" });
+    store.session = makeSession({ current: null });
+    renderSorter(root);
+    expect(root.querySelector('[data-action="similar"]')).not.toBeNull();
+    expect(key("Ctrl+Shift+D")).toBe(true);
+    expect(similar.openSimilar).toHaveBeenCalled();
+  });
+
+  it("キーリピートでは開かない", () => {
+    expect(key("Ctrl+Shift+D", true)).toBe(true);
+    expect(similar.openSimilar).not.toHaveBeenCalled();
   });
 });
 

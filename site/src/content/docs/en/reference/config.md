@@ -40,6 +40,8 @@ next = "Right"
 toggle_view = "Ctrl+Shift+F"               # sidebar / full-screen
 toggle_paths = "Ctrl+Shift+P"              # show / hide folder paths
 toggle_grid = "Ctrl+Shift+L"               # open / close the grid view
+toggle_similar = "Ctrl+Shift+D"            # open / close the similar-images view
+keep_only = "Ctrl+Shift+K"                 # "keep only this" in the similar-images view
 
 [[targets]]
 key = "1"

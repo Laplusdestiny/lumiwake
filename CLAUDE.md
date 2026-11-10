@@ -17,7 +17,7 @@ MVP（手動仕分け）は実装済み。実装の経緯・決定事項・残�
 
 - アプリ名: **Lumiwake**（lumi＝光 ＋ 振り分け）。GitHub の Public リポジトリ、MIT ライセンス（著作権者 Laplusdestiny）
 - 技術: Tauri（Rust ＋ WebView）。画像デコードとファイル操作はすべて Rust 側。フロントは表示とキー入力の受け渡しのみ
-- Rust コアは 4 モジュール構成: スキャナ / デコーダ / ファイル操作 / 設定管理。移動・削除予定・Undo の整合性はファイル操作モジュールが一手に持つ
+- Rust コアは 4 モジュール構成: スキャナ / デコーダ / ファイル操作 / 設定管理。移動・削除予定・Undo の整合性はファイル操作モジュールが一手に持つ（後から足した類似画像の判定 `similar/` は計算だけを行い、削除はファイル操作モジュールを通す）
 - 画像デコード: `image` クレート（AVIF は avif-native ＋ libdav1d）、HEIC は `libheif-rs`
 - MVP は手動仕分けのみ。AI（CLIP）による候補提示は MVP 後の拡張。RAW・動画は対象外
 - UI: ダークテーマ。サイドバー型（中央プレビュー＋右に振り分け先リスト）をデフォルトにし、表示モード切り替え可能。振り分け先リストは名前だけでなくフルパスも表示（同名フォルダの区別のため）
@@ -51,6 +51,7 @@ MVP（手動仕分け）は実装済み。実装の経緯・決定事項・残�
 - `src/` — 画面（素の TypeScript + Vite）。表示とキー入力の受け渡しだけ。Rust 呼び出しは `src/api.ts` に集約
 - `src-tauri/src/` — Rust コア
   - `scanner.rs` スキャナ / `decoder/` デコーダ・先読みキャッシュ / `fileops/` ファイル操作 ★ / `config/` 設定管理
+  - `similar/` 類似画像の判定（dHash・ファイル名の類似・グループ化・バックグラウンド走査。ファイルは動かさない）
   - `commands.rs` 画面から呼ぶ Tauri コマンド、`protocol.rs` 画像を返す `lumi://` プロトコル、`state.rs` 共有状態
 - `src-tauri/tests/fixtures/` — テスト用の極小 HEIC / AVIF（ダミー画像。実在の写真は置かない）
 - `site/` — 説明ページ（Astro Starlight、日英）。依存は別の package.json
