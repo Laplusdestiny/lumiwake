@@ -192,6 +192,7 @@ pub type PrintFn = Arc<dyn Fn(&Path) -> Result<Fingerprint, String> + Send + Syn
 impl SimilarScan {
     pub fn new() -> Self
     pub fn reset(&self, generation: u64)                         // 表を空にし、進行中の走査を中止する
+    pub fn renumber(&self, generation: u64)                      // 表は残し、待ちの分だけ捨てて番号を付け替える（並び順の変更）
     pub fn start(self: &Arc<Self>, generation: u64, jobs: Vec<ScanJob>, workers: usize, load: PrintFn) -> ScanStatus
     pub fn status(&self) -> ScanStatus
     pub fn get(&self, key: &Path) -> Option<Fingerprint>         // 成功したものだけ
@@ -212,12 +213,14 @@ pub similar: Arc<SimilarScan>   // AppState のフィールド
 #[test] fn reset_discards_results_of_an_older_scan()
 // load を Barrier で止めたまま reset(2) → 止めていた load を進める → status は {generation: 2, done: 0, total: 0, running: false}、get は None
 #[test] fn start_with_a_stale_generation_does_nothing()
+#[test] fn renumber_keeps_results_and_accepts_the_new_generation()
+// 5 件を走査 → renumber(2) → get は取れたまま。start(2, 同じ 5 件) で load は呼ばれず done 5 / total 5
 ```
 
 `state.rs` / `commands.rs` のテスト: `start_session` をやり直すと `state.similar.status().generation` が新しい `generation` になり `done == 0`。
 
 - [ ] **Step 2: 失敗を確認** — `cargo test similar::scan`
-- [ ] **Step 3: 実装** — `Mutex<Inner { generation, table: HashMap<PathBuf, Option<Fingerprint>>, queue: VecDeque<ScanJob>, workers_alive: usize }>`。ワーカーはロックを取って 1 件取り出し、ロックを外して `std::panic::catch_unwind(AssertUnwindSafe(|| load(&job.path)))` を呼び、ロックを取り直して `generation` が同じときだけ表に入れる。キューが空か `generation` が変わったら終わる。`running` は `workers_alive > 0 || !queue.is_empty()`。`AppState::new` で `similar: Arc::new(SimilarScan::new())`、`start_session` で `state.similar.reset(generation)`
+- [ ] **Step 3: 実装** — `Mutex<Inner { generation, table: HashMap<PathBuf, Option<Fingerprint>>, queue: VecDeque<ScanJob>, workers_alive: usize }>`。ワーカーはロックを取って 1 件取り出し、ロックを外して `std::panic::catch_unwind(AssertUnwindSafe(|| load(&job.path)))` を呼び、ロックを取り直して `generation` が同じときだけ表に入れる。キューが空か `generation` が変わったら終わる。`running` は `workers_alive > 0 || !queue.is_empty()`。`AppState::new` で `similar: Arc::new(SimilarScan::new())`、`start_session` で `state.similar.reset(generation)`、`apply_config` で並び順を変えて `generation` を付け替えるところ（`commands.rs` の `reorder_open` の直後）で `state.similar.renumber(generation)`
 - [ ] **Step 4: 通ることを確認** — `cargo test similar`、`cargo test commands`
 - [ ] **Step 5: コミット** — `Feat: 類似判定用の情報をバックグラウンドで集める`
 
@@ -278,7 +281,7 @@ api.keepOnly(generation: number, keep: number, others: number[]): Promise<KeepOn
 // 削除フォルダを設定したあとフォルダを消す → deleted == 0、error が Some、ファイルは元の場所
 #[test] fn stale_generation_is_rejected()
 // 設定で並び順を変えて番号が変わったあと、古い generation で delete_similar / keep_only → Err、削除予定 0 件
-// （並び順の変更で generation が変わらない実装なら、apply_config で変えるよう直す）
+// （並び順を変えると apply_config が generation を付け替える。既存の挙動）
 #[test] fn rescanning_after_reorder_reuses_fingerprints()    // 並び順を変えてから start_similar_scan → done がすぐ total に等しい
 ```
 
