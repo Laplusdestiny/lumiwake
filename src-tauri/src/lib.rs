@@ -5,6 +5,7 @@ pub mod fileops;
 pub mod format;
 pub mod protocol;
 pub mod scanner;
+pub mod similar;
 pub mod state;
 
 use state::AppState;

@@ -1014,4 +1014,107 @@ mod tests {
         assert_eq!(listing(&e.trash), ["img2.jpg"]);
         assert_eq!(s.pending_deletions().len(), 2);
     }
+
+    // ---- 番号を指定した削除（類似画像の確認） ----
+
+    #[test]
+    fn delete_at_marks_another_image_without_moving_the_cursor() {
+        let (e, imgs) = env(5);
+        let mut s = session(imgs.clone(), None);
+        s.delete_at(3, DeletionReason::Similar).unwrap();
+        assert_eq!(s.items()[3].status, Status::Marked { reason: DeletionReason::Similar });
+        assert_eq!(s.current(), Some(0), "見ている画像は変えない");
+        assert_eq!(listing(&e.src).len(), 5, "ファイルは動かさない");
+        assert_eq!(s.recent_history(1)[0].label, "削除（類似）");
+    }
+
+    #[test]
+    fn delete_at_moves_to_the_delete_folder() {
+        let (e, imgs) = env(3);
+        let mut s = session(imgs.clone(), Some(&e.trash));
+        s.delete_at(2, DeletionReason::Similar).unwrap();
+        assert_eq!(listing(&e.trash), ["img3.jpg"]);
+        assert_eq!(read(&e.trash.join("img3.jpg")), "image 3");
+        assert_eq!(
+            s.items()[2].status,
+            Status::Trashed { to: e.trash.join("img3.jpg"), reason: DeletionReason::Similar }
+        );
+        assert_eq!(s.current(), Some(0));
+    }
+
+    #[test]
+    fn delete_at_on_the_current_image_advances() {
+        let (_e, imgs) = env(3);
+        let mut s = session(imgs, None);
+        s.delete_at(0, DeletionReason::Similar).unwrap();
+        assert_eq!(s.current(), Some(1));
+        s.delete_at(2, DeletionReason::Similar).unwrap();
+        s.delete_at(1, DeletionReason::Similar).unwrap();
+        assert_eq!(s.current(), None, "残りがなければ完了");
+    }
+
+    #[test]
+    fn delete_at_can_be_undone_one_by_one() {
+        let (e, imgs) = env(3);
+        let mut s = session(imgs.clone(), Some(&e.trash));
+        s.delete_at(1, DeletionReason::Similar).unwrap();
+        s.delete_at(2, DeletionReason::Similar).unwrap();
+        assert_eq!(listing(&e.src), ["img1.jpg"]);
+
+        s.undo().unwrap();
+        assert_eq!(listing(&e.src), ["img1.jpg", "img3.jpg"]);
+        assert_eq!(s.current(), Some(2), "取り消した画像を見る");
+        s.undo().unwrap();
+        assert_eq!(listing(&e.src), ["img1.jpg", "img2.jpg", "img3.jpg"]);
+        assert_eq!(read(&imgs[1]), "image 2");
+        assert!(listing(&e.trash).is_empty());
+        assert!(s.items().iter().all(|i| i.status == Status::Pending));
+        assert!(!s.can_undo());
+    }
+
+    #[test]
+    fn delete_at_rejects_closed_out_of_range_and_pending_conflict() {
+        let (e, imgs) = env(4);
+        let mut s = session(imgs.clone(), None);
+        s.apply(move_to(&e.a)).unwrap(); // img1 を移動
+        s.apply(Action::Delete).unwrap(); // img2 を削除予定
+        for idx in [0, 1, 4, 99] {
+            assert!(matches!(s.delete_at(idx, DeletionReason::Similar), Err(FileOpError::NotOpen)), "{idx}");
+        }
+        assert_eq!(s.recent_history(10).len(), 2, "履歴は増えない");
+
+        // 同名ファイルの確認待ちの間は受け付けない
+        fs::write(e.a.join("img3.jpg"), "existing").unwrap();
+        assert!(matches!(s.apply(move_to(&e.a)).unwrap(), Outcome::Conflict(_)));
+        assert!(matches!(s.delete_at(3, DeletionReason::Similar), Err(FileOpError::ConflictPending)));
+        assert_eq!(s.items()[3].status, Status::Pending);
+    }
+
+    #[test]
+    fn delete_at_keeps_state_when_the_move_fails() {
+        let (e, imgs) = env(2);
+        let fs_ = Arc::new(FaultyFs { cross_device: true, fail_copy_midway: true, ..Default::default() });
+        let mut s = Session::new(fs_, imgs.clone(), Some(e.trash.clone()));
+        assert!(s.delete_at(1, DeletionReason::Similar).is_err());
+        assert_eq!(s.items()[1].status, Status::Pending);
+        assert!(!s.can_undo());
+        assert_eq!(read(&imgs[1]), "image 2", "元のファイルは無傷");
+        assert!(listing(&e.trash).is_empty(), "コピー途中のファイルを残さない");
+
+        // 削除フォルダがなくなっていた場合も同じ
+        let mut s = session(imgs.clone(), Some(&e.src.join("no-such-dir")));
+        assert!(matches!(s.delete_at(1, DeletionReason::Similar), Err(FileOpError::TargetMissing(_))));
+        assert_eq!(s.items()[1].status, Status::Pending);
+    }
+
+    #[test]
+    fn similar_deletions_are_listed_as_pending() {
+        let (_e, imgs) = env(2);
+        let mut s = session(imgs.clone(), None);
+        s.delete_at(1, DeletionReason::Similar).unwrap();
+        let pending = s.pending_deletions();
+        assert_eq!(pending.len(), 1);
+        assert_eq!((pending[0].path.clone(), pending[0].reason), (imgs[1].clone(), DeletionReason::Similar));
+        assert_eq!(serde_json::to_string(&DeletionReason::Similar).unwrap(), "\"similar\"");
+    }
 }
