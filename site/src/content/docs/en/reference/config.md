@@ -21,6 +21,7 @@ Settings can be edited both in the GUI and in a TOML file. Saving in the GUI wri
 source_dir = "/home/me/Pictures/unsorted"  # last source folder (saved automatically)
 recent_sources = ["/home/me/Pictures/unsorted", "/mnt/nas/photos"]  # recent source folders, newest first, up to 10 (saved automatically)
 include_subdirs = false
+include_targets = false                    # when loading subfolders, also load destination folders
 sort_order = "name_asc"                    # image order (see below)
 delete_folder = "/home/me/Pictures/to-delete"  # omit to "mark for deletion" in place
 on_exit = "confirm"                        # "confirm" / "delete" (without asking)

@@ -148,7 +148,7 @@ describe("キー入力", () => {
     store.screen = "start";
     store.config = makeConfig({ source_dir: "/home/u/inbox" });
     press("Enter");
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("start_session", { source: "/home/u/inbox", includeSubdirs: false }));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("start_session", { source: "/home/u/inbox", includeSubdirs: false, includeTargets: false }));
   });
 
   it("開始画面に起動時に取得したバージョンを表示する", async () => {
@@ -163,7 +163,7 @@ describe("キー入力", () => {
     store.config = makeConfig({ source_dir: "/home/u/a", recent_sources: ["/home/u/a", "/home/u/b"] });
     expect(press("ArrowDown")).toBe(true);
     press("Enter");
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("start_session", { source: "/home/u/b", includeSubdirs: false }));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("start_session", { source: "/home/u/b", includeSubdirs: false, includeTargets: false }));
   });
 
   it("Ctrl+Q で終了する", async () => {

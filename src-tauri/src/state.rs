@@ -27,6 +27,8 @@ pub struct SessionState {
     pub generation: u64,
     pub source: PathBuf,
     pub unsupported: Vec<PathBuf>,
+    /// 読み込み時に読み飛ばした振り分け先フォルダ
+    pub excluded_targets: Vec<PathBuf>,
 }
 
 pub struct AppState {

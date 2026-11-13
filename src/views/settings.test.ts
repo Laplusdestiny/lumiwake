@@ -209,6 +209,7 @@ describe("一般", () => {
     input("view_mode", "focus");
     input("accent", "green");
     input("include_subdirs", "", true);
+    input("include_targets", "", true);
     input("check_updates", "", false);
     input("show_paths", "", false);
     input("prefetch", "99");
@@ -222,6 +223,7 @@ describe("一般", () => {
       view_mode: "focus",
       accent: "green",
       include_subdirs: true,
+      include_targets: true,
       check_updates: false,
       show_paths: false,
       prefetch: 16,

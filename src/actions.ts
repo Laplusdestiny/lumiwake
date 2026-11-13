@@ -1,6 +1,7 @@
 // 画面からの操作。キーを連打しても 1 つずつ順番に処理する（前の操作の結果を見てから次へ）。
 import { api, errorText, type ConflictChoice, type SessionView, type SortAction } from "./api";
 import { notify, store } from "./store";
+import { baseName } from "./util";
 import { toast } from "./toast";
 
 let chain: Promise<void> = Promise.resolve();
@@ -82,14 +83,24 @@ export function jumpTo(index: number): Promise<void> {
   return enqueue(async () => setSession(await api.jumpTo(index)));
 }
 
-export async function startSession(source: string, includeSubdirs: boolean): Promise<void> {
-  const view = await api.startSession(source, includeSubdirs);
+export async function startSession(source: string, includeSubdirs: boolean, includeTargets: boolean): Promise<void> {
+  const view = await api.startSession(source, includeSubdirs, includeTargets);
   store.config = await api.getConfig();
   store.screen = "sort";
   setSession(view);
   if (view.unsupported.length > 0) {
     const exts = [...new Set(view.unsupported.map((p) => p.split(".").pop()?.toUpperCase()))].join(" / ");
     toast(`${exts} の ${view.unsupported.length} 枚は、このビルドでは表示に対応していないため読み込みませんでした`, "info", 6000);
+  }
+  if (view.excludedTargets.length > 0) {
+    // 振り分け先は黙って外さず、読み込まなかったことと含め方を伝える
+    const shown = view.excludedTargets.slice(0, 3).map(baseName).join("、");
+    const names = view.excludedTargets.length > 3 ? `${shown} ほか` : shown;
+    toast(
+      `振り分け先のフォルダ ${view.excludedTargets.length} 個（${names}）は読み込みませんでした。中の画像も見るには、開始画面で「振り分け先フォルダの画像も含める」にチェックを入れてください`,
+      "info",
+      10000,
+    );
   }
   if (view.total === 0) toast("対象の画像が見つかりませんでした");
 }

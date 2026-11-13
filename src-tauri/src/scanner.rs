@@ -28,6 +28,8 @@ pub struct ScanResult {
     pub images: Vec<PathBuf>,
     /// 画像だがデコーダが用意されていないため読み込まなかったもの
     pub unsupported: Vec<PathBuf>,
+    /// 走査の途中で出会い、除外の指定（振り分け先・削除フォルダ）のために読み飛ばしたサブフォルダ
+    pub excluded_dirs: Vec<PathBuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -65,8 +67,12 @@ pub fn scan(opts: &ScanOptions, is_supported: impl Fn(Format) -> bool) -> Result
                 continue;
             };
             if file_type.is_dir() {
-                if opts.include_subdirs && !is_excluded(&path, &exclude) {
-                    stack.push(path);
+                if opts.include_subdirs {
+                    match dir_kind(&path, &exclude) {
+                        DirKind::Scan => stack.push(path),
+                        DirKind::Excluded => result.excluded_dirs.push(path),
+                        DirKind::Unresolvable => {}
+                    }
                 }
                 continue;
             }
@@ -88,6 +94,7 @@ pub fn scan(opts: &ScanOptions, is_supported: impl Fn(Format) -> bool) -> Result
     }
     sort_paths(&mut result.images, opts.order);
     result.unsupported.sort_by(|a, b| natural_cmp_path(a, b));
+    result.excluded_dirs.sort_by(|a, b| natural_cmp_path(a, b));
     Ok(result)
 }
 
@@ -163,11 +170,20 @@ fn sort_keys(paths: &[PathBuf], order: SortOrder) -> Vec<SortKey> {
     })
 }
 
-fn is_excluded(dir: &Path, exclude: &[PathBuf]) -> bool {
+/// サブフォルダをどう扱うか
+enum DirKind {
+    Scan,
+    /// 除外の指定（振り分け先・削除フォルダ）に当たる
+    Excluded,
+    /// 実体のパスを解決できない（壊れたリンクなど）。走査しない
+    Unresolvable,
+}
+
+fn dir_kind(dir: &Path, exclude: &[PathBuf]) -> DirKind {
     match dunce::canonicalize(dir) {
-        Ok(c) => exclude.iter().any(|ex| c.starts_with(ex)),
-        // 解決できないフォルダ（壊れたリンクなど）は走査しない
-        Err(_) => true,
+        Ok(c) if exclude.iter().any(|ex| c.starts_with(ex)) => DirKind::Excluded,
+        Ok(_) => DirKind::Scan,
+        Err(_) => DirKind::Unresolvable,
     }
 }
 
@@ -283,6 +299,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(names(&r.images, root), ["a.jpg", "sub/b.jpg", "sub/deep/c.jpg"]);
+        // 読み飛ばしたフォルダを呼び出し側に伝える（黙って外さない）
+        assert_eq!(names(&r.excluded_dirs, root), ["trash", "風景"]);
+    }
+
+    #[test]
+    fn reports_only_excluded_folders_it_actually_met() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("src");
+        touch(&root.join("a.jpg"));
+        touch(&root.join("sub/target/b.jpg"));
+        touch(&root.join("sub/target/inner/c.jpg"));
+        touch(&dir.path().join("outside/d.jpg"));
+        let exclude = vec![root.join("sub/target"), root.join("sub/target/inner"), dir.path().join("outside")];
+        let scan_with = |include_subdirs: bool| {
+            scan(
+                &ScanOptions {
+                    root: root.clone(),
+                    include_subdirs,
+                    exclude: exclude.clone(),
+                    order: SortOrder::NameAsc,
+                },
+                all_supported,
+            )
+            .unwrap()
+        };
+        let r = scan_with(true);
+        let root = dunce::canonicalize(&root).unwrap();
+        assert_eq!(names(&r.images, &root), ["a.jpg"]);
+        assert_eq!(
+            names(&r.excluded_dirs, &root),
+            ["sub/target"],
+            "外にあるフォルダや、除外したフォルダの中は数えない"
+        );
+        // サブフォルダを読まないときは、そもそも対象外なので伝えない
+        assert!(scan_with(false).excluded_dirs.is_empty());
     }
 
     #[test]

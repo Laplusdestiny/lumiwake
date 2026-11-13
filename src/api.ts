@@ -29,6 +29,8 @@ export interface Config {
     /** 最近使った仕分け元フォルダ（新しい順） */
     recent_sources?: string[];
     include_subdirs: boolean;
+    /** サブフォルダを読み込むとき、振り分け先フォルダの中の画像も読み込むか */
+    include_targets: boolean;
     sort_order: SortOrder;
     delete_folder?: string;
     on_exit: OnExit;
@@ -118,6 +120,8 @@ export interface SessionView {
   pendingDeletions: number;
   movedCounts: number[];
   unsupported: string[];
+  /** 読み込み時に読み飛ばした振り分け先フォルダ */
+  excludedTargets: string[];
   conflict: ConflictView | null;
 }
 
@@ -225,8 +229,8 @@ export const api = {
   openConfigFile: () => invoke<void>("open_config_file"),
   openLocation: (path: string) => invoke<void>("open_location", { path }),
   listSubfolders: (path: string) => invoke<string[]>("list_subfolders", { path }),
-  startSession: (source: string, includeSubdirs: boolean) =>
-    invoke<SessionView>("start_session", { source, includeSubdirs }),
+  startSession: (source: string, includeSubdirs: boolean, includeTargets: boolean) =>
+    invoke<SessionView>("start_session", { source, includeSubdirs, includeTargets }),
   getSession: () => invoke<SessionView | null>("get_session"),
   perform: (action: SortAction) => invoke<ActionResult>("perform", { action }),
   resolveConflict: (choice: ConflictChoice) => invoke<ActionResult>("resolve_conflict", { choice }),

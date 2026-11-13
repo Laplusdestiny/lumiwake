@@ -134,8 +134,8 @@ describe("startSession", () => {
   it("読み込んで仕分け画面に切り替え、未対応の形式を知らせる", async () => {
     api.startSession.mockResolvedValue(makeSession({ unsupported: ["/a/x.heic", "/a/y.HEIC", "/a/z.avif"] }));
     api.getConfig.mockResolvedValue(makeConfig());
-    await actions.startSession("/a", true);
-    expect(api.startSession).toHaveBeenCalledWith("/a", true);
+    await actions.startSession("/a", true, false);
+    expect(api.startSession).toHaveBeenCalledWith("/a", true, false);
     expect(store.screen).toBe("sort");
     expect(store.config).toEqual(makeConfig());
     expect(toast).toHaveBeenCalledWith(expect.stringMatching(/^HEIC \/ AVIF の 3 枚は/), "info", 6000);
@@ -144,7 +144,32 @@ describe("startSession", () => {
   it("画像がなければ知らせる", async () => {
     api.startSession.mockResolvedValue(makeSession({ total: 0, current: null }));
     api.getConfig.mockResolvedValue(makeConfig());
-    await actions.startSession("/empty", false);
+    await actions.startSession("/empty", false, false);
     expect(toast).toHaveBeenCalledWith("対象の画像が見つかりませんでした");
+  });
+
+  it("読み飛ばした振り分け先フォルダがあれば、名前と含め方を知らせる", async () => {
+    api.startSession.mockResolvedValue(makeSession({ excludedTargets: ["/p/風景", "/p/人物"] }));
+    api.getConfig.mockResolvedValue(makeConfig());
+    await actions.startSession("/p", true, false);
+    expect(toast).toHaveBeenCalledWith(
+      "振り分け先のフォルダ 2 個（風景、人物）は読み込みませんでした。中の画像も見るには、開始画面で「振り分け先フォルダの画像も含める」にチェックを入れてください",
+      "info",
+      10000,
+    );
+  });
+
+  it("読み飛ばしたフォルダが多いときは 3 個まで名前を出す", async () => {
+    api.startSession.mockResolvedValue(makeSession({ excludedTargets: ["/p/a", "/p/b", "/p/c", "/p/d", "/p/e"] }));
+    api.getConfig.mockResolvedValue(makeConfig());
+    await actions.startSession("/p", true, false);
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining("5 個（a、b、c ほか）"), "info", 10000);
+  });
+
+  it("読み飛ばしたフォルダがなければ知らせない", async () => {
+    api.startSession.mockResolvedValue(makeSession());
+    api.getConfig.mockResolvedValue(makeConfig());
+    await actions.startSession("/p", true, true);
+    expect(toast).not.toHaveBeenCalled();
   });
 });
