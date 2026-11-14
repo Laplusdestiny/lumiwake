@@ -56,19 +56,14 @@ impl Fs for RealFs {
 
 /// rename が別ボリュームのために失敗したか
 fn is_cross_device(err: &io::Error) -> bool {
-    if err.kind() == io::ErrorKind::CrossesDevices {
-        return true;
-    }
-    // EXDEV (Unix) / ERROR_NOT_SAME_DEVICE (Windows)
+    // EXDEV (Unix) / ERROR_NOT_SAME_DEVICE (Windows)。それ以外の OS では ErrorKind だけで判定する
     #[cfg(unix)]
-    const CROSS_DEVICE: i32 = 18;
+    const CROSS_DEVICE: Option<i32> = Some(18);
     #[cfg(windows)]
-    const CROSS_DEVICE: i32 = 17;
-    #[cfg(any(unix, windows))]
-    if err.raw_os_error() == Some(CROSS_DEVICE) {
-        return true;
-    }
-    false
+    const CROSS_DEVICE: Option<i32> = Some(17);
+    #[cfg(not(any(unix, windows)))]
+    const CROSS_DEVICE: Option<i32> = None;
+    err.kind() == io::ErrorKind::CrossesDevices || (CROSS_DEVICE.is_some() && err.raw_os_error() == CROSS_DEVICE)
 }
 
 /// `from` を `to` へ移動する。`to` が既に存在する場合は上書きせず `AlreadyExists` で失敗する。
