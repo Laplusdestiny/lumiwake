@@ -51,7 +51,7 @@ MVP（手動仕分け）は実装済み。実装の経緯・決定事項・残�
 - `src/` — 画面（素の TypeScript + Vite）。表示とキー入力の受け渡しだけ。Rust 呼び出しは `src/api.ts` に集約
 - `src-tauri/src/` — Rust コア
   - `scanner.rs` スキャナ / `decoder/` デコーダ・先読みキャッシュ / `fileops/` ファイル操作 ★ / `config/` 設定管理
-  - `similar/` 類似画像の判定（dHash・ファイル名の類似・グループ化・バックグラウンド走査。ファイルは動かさない）
+  - `similar/` 類似画像の判定（dHash・ファイル名の類似・グループ化・バックグラウンド走査・判定結果の保存 `store.rs`。ファイルは動かさない）
   - `commands.rs` 画面から呼ぶ Tauri コマンド、`protocol.rs` 画像を返す `lumi://` プロトコル、`state.rs` 共有状態
 - `src-tauri/tests/fixtures/` — テスト用の極小 HEIC / AVIF（ダミー画像。実在の写真は置かない）
 - `site/` — 説明ページ（Astro Starlight、日英）。依存は別の package.json

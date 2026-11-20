@@ -105,6 +105,8 @@ Lumiwake only shows candidates. It never deletes anything on its own, and nothin
 - Each image shows "largest resolution" / "largest size" marks and its similarity to the closest image in the group, to help you decide which one to keep
 - Deleting here works like the delete key: the file is moved to the delete folder, or marked for deletion in place. Files are only deleted for good after you confirm when quitting
 - Only images you have not sorted yet (including skipped ones) are compared. The first time you open the view every image has to be read, so it takes a moment (progress is shown at the top). You can already review and delete the groups found so far while it runs
+- The results are saved and kept after you quit the app. From the second time on, images that have not changed since they were last checked (same location, modification time and size) are not read again, so the check finishes quickly. Images you sorted with Lumiwake keep their results when you later load the folder they were moved to
+- The results are saved in `~/.cache/io.github.laplusdestiny.lumiwake/similar-cache.json` on Linux and `%LOCALAPPDATA%\io.github.laplusdestiny.lumiwake\similar-cache.json` on Windows. It is safe to delete this file (the next check just reads every image again). Results not used for 90 days are removed automatically
 
 ## 4. When a file with the same name exists
 
