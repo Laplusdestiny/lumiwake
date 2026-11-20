@@ -86,6 +86,8 @@ pub struct PrintStore {
     file: PathBuf,
     limit: usize,
     inner: Mutex<Inner>,
+    /// 書き出しを 1 本ずつにする（同じ一時ファイルを取り合わず、古い写しが後から上書きしないように）
+    saving: Mutex<()>,
 }
 
 impl PrintStore {
@@ -95,7 +97,7 @@ impl PrintStore {
     }
 
     fn with_limit(file: PathBuf, limit: usize) -> Self {
-        PrintStore { file, limit, inner: Mutex::new(Inner::default()) }
+        PrintStore { file, limit, inner: Mutex::new(Inner::default()), saving: Mutex::new(()) }
     }
 
     /// 読み込み済みの記録。初回だけファイルを読む（読む間はロックを持ち、ほかのスレッドを待たせる）
@@ -150,8 +152,10 @@ impl PrintStore {
     }
 
     /// 古い記録を捨てて書き出す。前回から変わっていなければ書かない。
-    /// ファイルに書く間はロックを持たない（判定を止めない）
+    /// ファイルに書く間は記録のロックを持たない（判定を止めない）。書き出し同士は順番に行い、
+    /// 後から始めた書き出しの写しが必ず後に書かれる
     pub fn save(&self, now: u64) -> io::Result<()> {
+        let _saving = self.saving.lock().unwrap_or_else(|e| e.into_inner());
         let (records, unsaved) = {
             let mut inner = self.lock();
             if !inner.changed {
@@ -414,6 +418,32 @@ mod tests {
             .collect();
         for (t, h) in handles.into_iter().enumerate() {
             assert_eq!(h.join().unwrap(), Some(fp(t as u64, 10)));
+        }
+    }
+
+    #[test]
+    fn concurrent_saves_never_leave_an_older_snapshot_behind() {
+        // 判定の終わりの書き出し（ワーカー）と終了時の書き出しが重なっても、新しいほうの内容が残る
+        for round in 0..200 {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Arc::new(PrintStore::new(file(&dir)));
+            let handles: Vec<_> = ["/a", "/b", "/c", "/d"]
+                .into_iter()
+                .map(|name| {
+                    let store = store.clone();
+                    std::thread::spawn(move || {
+                        store.insert(Path::new(name), st(1, 10), fp(1, 10), 0);
+                        store.save(0)
+                    })
+                })
+                .collect();
+            for h in handles {
+                h.join().unwrap().unwrap_or_else(|e| panic!("{round} 回目: 書き出しに失敗 {e}"));
+            }
+            let again = PrintStore::new(file(&dir));
+            for name in ["/a", "/b", "/c", "/d"] {
+                assert!(again.lookup(Path::new(name), st(1, 10), 0).is_some(), "{round} 回目: {name} が消えた");
+            }
         }
     }
 
