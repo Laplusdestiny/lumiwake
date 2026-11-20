@@ -57,14 +57,14 @@ describe("checkForUpdates", () => {
     expect(dialog.ask).not.toHaveBeenCalled();
   });
 
-  it("再起動の前に類似判定の記録を保存する", async () => {
+  it("更新を入れる前に類似判定の記録を保存する（Windows では更新を入れるとアプリが終了するため）", async () => {
     const order: string[] = [];
     api.saveSimilarCache.mockImplementation(async () => void order.push("save"));
     proc.relaunch.mockImplementation(async () => void order.push("relaunch"));
-    updater.check.mockResolvedValue(update());
+    updater.check.mockResolvedValue(update(vi.fn(async () => void order.push("install"))));
     await checkForUpdates();
     press("install");
-    await vi.waitFor(() => expect(order).toEqual(["save", "relaunch"]));
+    await vi.waitFor(() => expect(order).toEqual(["save", "install", "relaunch"]));
   });
 
   it("類似判定の記録を保存できなくても再起動する", async () => {

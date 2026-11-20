@@ -366,6 +366,8 @@ pub fn start_session(
         excluded_targets,
     });
     if let Some(old) = old {
+        // 前のフォルダで移動した画像の類似判定の記録を、移動先でも使えるようにしてから手放す
+        state.carry_moves(crate::state::moved_images(std::iter::once(&old.session)));
         // 前のフォルダで削除予定にしたものは、終了時の確認まで引き継ぐ
         if !old.session.pending_deletions().is_empty() {
             state.retired().push(old.session);
@@ -1367,6 +1369,34 @@ mod tests {
         f.relaunch();
         start_at(&f, "a");
         assert_eq!(f.scan().failed, 0);
+    }
+
+    #[test]
+    fn records_follow_moves_even_when_the_previous_folder_is_dropped() {
+        // 振り分けだけ（削除予定なし）で別のフォルダへ切り替えると、前のセッションは残らない
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 }); // 1.png → a/1.png
+        start_at(&f, "b");
+        assert!(f.state().retired().is_empty());
+        f.state().save_prints();
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0, "移動先でも記録を使う");
+    }
+
+    #[test]
+    fn records_follow_moves_within_the_same_run() {
+        // 振り分けたあと、終了せずにそのまま振り分け先を読み込む
+        let f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 });
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0, "同じ起動の中でも移動先で記録を使う");
     }
 
     #[test]

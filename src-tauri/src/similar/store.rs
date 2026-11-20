@@ -156,7 +156,7 @@ impl PrintStore {
     /// 後から始めた書き出しの写しが必ず後に書かれる
     pub fn save(&self, now: u64) -> io::Result<()> {
         let _saving = self.saving.lock().unwrap_or_else(|e| e.into_inner());
-        let (records, unsaved) = {
+        let records = {
             let mut inner = self.lock();
             if !inner.changed {
                 return Ok(());
@@ -187,17 +187,15 @@ impl PrintStore {
                 })
                 .collect();
             records.sort_by(|a, b| a.path.cmp(&b.path));
-            let unsaved = inner.unsaved;
             inner.unsaved = 0;
             inner.changed = false;
-            (records, unsaved)
+            records
         };
         let result = write_file(&self.file, &StoreFile { version: STORE_VERSION, records });
         if result.is_err() {
-            // 書けなかったので、次の機会にもう一度書く
-            let mut inner = self.lock();
-            inner.unsaved += unsaved;
-            inner.changed = true;
+            // 次の書き出しで、今回の分も含めて書く。ただし新しい記録の件数は数え直す
+            // （戻すと、書けない間は 1 枚判定するたびに書き出しを試みて判定が遅くなる）
+            self.lock().changed = true;
         }
         result
     }
@@ -342,6 +340,28 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, ["similar-cache.json"], "一時ファイルを残さない");
+    }
+
+    #[test]
+    fn a_failed_save_waits_for_new_records_before_trying_again() {
+        // 書けない間に 1 枚ごとに書き出しを試みると、判定が遅くなる。失敗したら次の 200 件（か判定の終わり）まで待つ
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, "").unwrap();
+        let store = PrintStore::new(blocker.join("similar-cache.json"));
+        for i in 0..FLUSH_EVERY {
+            store.insert(Path::new(&format!("/{i}")), st(1, 10), fp(1, 10), 0);
+        }
+        assert!(store.save(0).is_err());
+        assert_eq!(store.unsaved(), 0, "失敗しても数え直す");
+        store.insert(Path::new("/next"), st(1, 10), fp(1, 10), 0);
+        assert_eq!(store.unsaved(), 1);
+        // 書けるようになれば、次の書き出しで失敗した分も含めて書く
+        std::fs::remove_file(&blocker).unwrap();
+        store.save(0).unwrap();
+        let again = PrintStore::new(blocker.join("similar-cache.json"));
+        assert!(again.lookup(Path::new("/0"), st(1, 10), 0).is_some());
+        assert!(again.lookup(Path::new("/next"), st(1, 10), 0).is_some());
     }
 
     #[test]

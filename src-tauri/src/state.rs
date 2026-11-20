@@ -5,6 +5,7 @@ use crate::decoder::{make_preview, DecodeLimit, PrefetchJob, Prefetcher, Preview
 use crate::fileops::{Session, Status};
 use crate::similar::scan::SimilarScan;
 use crate::similar::store::{self, PrintStore};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -107,27 +108,36 @@ impl AppState {
     /// 類似判定の記録を書き出す。Lumiwake が移動した画像は、移動先のパスでも記録を使えるようにしてから書く。
     /// 失敗しても終了などは止めない
     pub fn save_prints(&self) {
-        let now = store::now_secs();
-        let mut moves: Vec<(PathBuf, PathBuf)> = Vec::new();
-        {
+        let moves = {
             // ロックは常に session → retired の順で取る
             let current = self.session();
             let retired = self.retired();
-            for s in retired.iter().chain(current.as_ref().map(|c| &c.session)) {
-                for item in s.items() {
-                    if let Status::Moved { to } | Status::Trashed { to, .. } = &item.status {
-                        moves.push((item.path.clone(), to.clone()));
-                    }
-                }
-            }
-        }
-        for (from, to) in moves {
-            // 次に読み込むときのパス（スキャナは実体のパスにそろえる）と合わせる
-            let to = dunce::canonicalize(&to).unwrap_or(to);
-            self.prints.copy_record(&from, &to, now);
-        }
-        if let Err(e) = self.prints.save(now) {
+            moved_images(retired.iter().chain(current.as_ref().map(|c| &c.session)))
+        };
+        self.carry_moves(moves);
+        if let Err(e) = self.prints.save(store::now_secs()) {
             eprintln!("類似判定の記録を保存できませんでした: {e}");
+        }
+    }
+
+    /// Lumiwake が移動した画像の記録を、移動先のパスでも使えるようにする（移動元の記録は残す）。
+    /// 仕分け元を切り替えて前のセッションを捨てる前と、書き出しの前に呼ぶ
+    pub fn carry_moves(&self, moves: Vec<(PathBuf, PathBuf)>) {
+        let now = store::now_secs();
+        // 次に読み込むときのパス（スキャナは実体のパスにそろえる）と合わせる。
+        // 移動先はたいてい数か所なので、実体のパスはフォルダごとに 1 回だけ調べる（SMB で終了が遅くならないように）
+        let mut dirs: HashMap<PathBuf, PathBuf> = HashMap::new();
+        for (from, to) in moves {
+            let to = match (to.parent(), to.file_name()) {
+                (Some(dir), Some(name)) => {
+                    let real = dirs
+                        .entry(dir.to_path_buf())
+                        .or_insert_with(|| dunce::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()));
+                    real.join(name)
+                }
+                _ => to,
+            };
+            self.prints.copy_record(&from, &to, now);
         }
     }
 
@@ -151,6 +161,17 @@ impl AppState {
             .collect();
         self.prefetcher.schedule(jobs);
     }
+}
+
+/// 移動した画像（元の場所と移動先の組）
+pub fn moved_images<'a>(sessions: impl Iterator<Item = &'a Session>) -> Vec<(PathBuf, PathBuf)> {
+    sessions
+        .flat_map(|s| s.items())
+        .filter_map(|item| match &item.status {
+            Status::Moved { to } | Status::Trashed { to, .. } => Some((item.path.clone(), to.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 /// 画像が今ある場所
