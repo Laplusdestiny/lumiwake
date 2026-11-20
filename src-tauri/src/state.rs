@@ -4,6 +4,7 @@ use crate::config::{self, Config};
 use crate::decoder::{make_preview, DecodeLimit, PrefetchJob, Prefetcher, PreviewCache, Registry, ThumbCache};
 use crate::fileops::{Session, Status};
 use crate::similar::scan::SimilarScan;
+use crate::similar::store::{self, PrintStore};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -44,6 +45,8 @@ pub struct AppState {
     pub grid_limit: DecodeLimit,
     /// 類似画像の判定用の情報（バックグラウンドで集める）
     pub similar: Arc<SimilarScan>,
+    /// 保存した類似判定の結果（アプリを終了しても残る）
+    pub prints: Arc<PrintStore>,
     prefetcher: Prefetcher,
     /// true のときだけウィンドウを閉じてよい（削除予定の確認を済ませた）
     pub allow_exit: AtomicBool,
@@ -51,7 +54,8 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config_path: PathBuf) -> Self {
+    /// `cache_path` は類似判定の結果を保存するファイル（ここではまだ読まない）
+    pub fn new(config_path: PathBuf, cache_path: PathBuf) -> Self {
         let (config, load_error) = match config::load_or_create(&config_path) {
             Ok(c) => (c, None),
             Err(e) => (Config::default(), Some(e.to_string())),
@@ -62,6 +66,7 @@ impl AppState {
         let workers = std::thread::available_parallelism().map(|n| n.get().clamp(1, 3)).unwrap_or(2);
         let prefetcher =
             Prefetcher::start(workers, cache.clone(), Arc::new(move |p: &Path| make_preview(&loader_registry, p)));
+        let prints = Arc::new(PrintStore::new(cache_path));
         AppState {
             config_path,
             config: Mutex::new(ConfigState { config, load_error }),
@@ -71,7 +76,16 @@ impl AppState {
             cache,
             grid_cache: Arc::new(ThumbCache::new(GRID_CACHE_CAPACITY)),
             grid_limit: DecodeLimit::new(GRID_DECODE_LIMIT),
-            similar: Arc::new(SimilarScan::new()),
+            similar: Arc::new(SimilarScan::with_on_idle(Arc::new({
+                let prints = prints.clone();
+                // 判定が終わったら書き出す。失敗しても判定の結果は使える
+                move || {
+                    if let Err(e) = prints.save(store::now_secs()) {
+                        eprintln!("類似判定の記録を保存できませんでした: {e}");
+                    }
+                }
+            }))),
+            prints,
             prefetcher,
             allow_exit: AtomicBool::new(false),
             next_generation: AtomicU64::new(1),

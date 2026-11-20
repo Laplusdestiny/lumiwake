@@ -574,8 +574,9 @@ pub fn start_similar_scan(state: State<'_, AppState>) -> CmdResult<ScanStatus> {
         (s.generation, jobs)
     };
     let workers = similar::scan_workers(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
-    let registry = state.registry.clone();
-    Ok(state.similar.start(generation, jobs, workers, Arc::new(move |p: &Path| similar::fingerprint(&registry, p))))
+    let (registry, prints) = (state.registry.clone(), state.prints.clone());
+    let load = Arc::new(move |p: &Path| similar::fingerprint_cached(&registry, &prints, p));
+    Ok(state.similar.start(generation, jobs, workers, load))
 }
 
 #[tauri::command]
@@ -810,12 +811,28 @@ mod tests {
             }
             std::fs::write(src.join("memo.txt"), "画像ではない").unwrap();
             let app = mock_app();
-            app.manage(AppState::new(dir.path().join("conf").join("config.toml")));
+            app.manage(AppState::new(dir.path().join("conf").join("config.toml"), Self::cache_file(&dir)));
             let f = Fixture { dir, app };
             let mut config = f.config().config;
             config.targets = vec![f.target("1", "a"), f.target("2", "b")];
             save_config(f.state(), config).unwrap();
             f
+        }
+
+        fn cache_file(dir: &TempDir) -> PathBuf {
+            dir.path().join("cache").join("similar-cache.json")
+        }
+
+        /// アプリを終了して、また起動したことにする（同じ設定ファイル・同じ保存先）
+        fn relaunch(&mut self) {
+            let cache = Self::cache_file(&self.dir);
+            self.relaunch_with(cache);
+        }
+
+        fn relaunch_with(&mut self, cache: PathBuf) {
+            let app = mock_app();
+            app.manage(AppState::new(self.dir.path().join("conf").join("config.toml"), cache));
+            self.app = app;
         }
 
         fn state(&self) -> State<'_, AppState> {
@@ -1121,7 +1138,7 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "targets = 1\n").unwrap();
         let app = mock_app();
-        app.manage(AppState::new(path));
+        app.manage(AppState::new(path, dir.path().join("similar-cache.json")));
         let payload = get_config(app.state::<AppState>());
         assert!(payload.load_error.is_some());
         assert!(payload.config.targets.is_empty());
@@ -1273,6 +1290,39 @@ mod tests {
         fn scanned(&self, rel: &str) -> PathBuf {
             dunce::canonicalize(self.path(rel)).unwrap()
         }
+    }
+
+    /// 判定の終わりに書き出す保存ファイルができるまで待つ（書き出しはワーカーが抜けるときに行う）
+    fn wait_for_file(path: &Path) {
+        let start = Instant::now();
+        while !path.exists() {
+            assert!(start.elapsed() < Duration::from_secs(5), "保存ファイルができない");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn scan_results_are_saved_and_reused_after_the_app_restarts() {
+        let mut f = Fixture::new();
+        f.start();
+        assert_eq!(f.scan().failed, 0);
+        wait_for_file(&Fixture::cache_file(&f.dir));
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("src/1.png"));
+        f.relaunch();
+        f.start();
+        let st = f.scan();
+        assert_eq!((st.done, st.total, st.failed), (3, 3, 0), "壊した 1.png もデコードせずに記録を使う");
+    }
+
+    #[test]
+    fn scan_finishes_even_when_the_cache_cannot_be_written() {
+        let mut f = Fixture::new();
+        let blocker = f.path("blocker");
+        std::fs::write(&blocker, "").unwrap();
+        f.relaunch_with(blocker.join("similar-cache.json"));
+        f.start();
+        let st = f.scan();
+        assert_eq!((st.done, st.total, st.failed, st.running), (3, 3, 0, false));
     }
 
     #[test]
