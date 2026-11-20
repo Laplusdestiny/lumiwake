@@ -68,6 +68,7 @@ pub fn run() {
             commands::pending_deletions,
             commands::finalize_and_exit,
             commands::exit_app,
+            commands::save_similar_cache,
         ])
         .run(tauri::generate_context!())
         .expect("Lumiwake の起動に失敗しました");

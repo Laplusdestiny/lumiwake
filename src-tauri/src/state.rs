@@ -104,6 +104,33 @@ impl AppState {
         self.retired.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// 類似判定の記録を書き出す。Lumiwake が移動した画像は、移動先のパスでも記録を使えるようにしてから書く。
+    /// 失敗しても終了などは止めない
+    pub fn save_prints(&self) {
+        let now = store::now_secs();
+        let mut moves: Vec<(PathBuf, PathBuf)> = Vec::new();
+        {
+            // ロックは常に session → retired の順で取る
+            let current = self.session();
+            let retired = self.retired();
+            for s in retired.iter().chain(current.as_ref().map(|c| &c.session)) {
+                for item in s.items() {
+                    if let Status::Moved { to } | Status::Trashed { to, .. } = &item.status {
+                        moves.push((item.path.clone(), to.clone()));
+                    }
+                }
+            }
+        }
+        for (from, to) in moves {
+            // 次に読み込むときのパス（スキャナは実体のパスにそろえる）と合わせる
+            let to = dunce::canonicalize(&to).unwrap_or(to);
+            self.prints.copy_record(&from, &to, now);
+        }
+        if let Err(e) = self.prints.save(now) {
+            eprintln!("類似判定の記録を保存できませんでした: {e}");
+        }
+    }
+
     pub fn next_generation(&self) -> u64 {
         self.next_generation.fetch_add(1, Ordering::SeqCst)
     }

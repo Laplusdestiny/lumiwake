@@ -778,8 +778,15 @@ fn finalize_all(state: &AppState) -> FinalizeReport {
     report
 }
 
+/// 類似判定の記録を書き出す（アップデート後の再起動の前に呼ぶ。再起動は `exit_app` を通らない）
+#[tauri::command]
+pub fn save_similar_cache(state: State<'_, AppState>) {
+    state.save_prints();
+}
+
 #[tauri::command]
 pub fn exit_app(app: AppHandle, state: State<'_, AppState>) {
+    state.save_prints();
     state.allow_exit.store(true, Ordering::SeqCst);
     app.exit(0);
 }
@@ -1312,6 +1319,67 @@ mod tests {
         f.start();
         let st = f.scan();
         assert_eq!((st.done, st.total, st.failed), (3, 3, 0), "壊した 1.png もデコードせずに記録を使う");
+    }
+
+    /// `rel` を仕分け元として読み込む
+    fn start_at(f: &Fixture, rel: &str) -> SessionView {
+        start_session(f.state(), lossy(&f.path(rel)), false, false).unwrap()
+    }
+
+    #[test]
+    fn moved_images_keep_their_records_at_the_destination() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 }); // 1.png → a/1.png
+        save_similar_cache(f.state());
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        let st = f.scan();
+        assert_eq!((st.done, st.total, st.failed), (1, 1, 0), "移動先でもデコードせずに記録を使う");
+    }
+
+    #[test]
+    fn undoing_a_move_still_uses_the_original_record() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 });
+        save_similar_cache(f.state());
+        undo(f.state()).unwrap();
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("src/1.png"));
+        f.relaunch();
+        f.start();
+        assert_eq!(f.scan().failed, 0, "元の場所の記録は消えていない");
+    }
+
+    #[test]
+    fn records_are_carried_over_for_images_moved_before_switching_folders() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 }); // 1.png → a/1.png
+        f.act(ActionArg::Delete); // 削除予定があるので、切り替えたあとも前のセッションが残る
+        start_at(&f, "b");
+        save_similar_cache(f.state());
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0);
+    }
+
+    #[test]
+    fn exit_saves_records_of_moved_images() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 });
+        f.state().save_prints();
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0);
     }
 
     #[test]
