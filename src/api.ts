@@ -249,6 +249,7 @@ export const api = {
   pendingDeletions: () => invoke<DeletionSummary>("pending_deletions"),
   finalizeAndExit: (del: boolean) => invoke<FinalizeReport>("finalize_and_exit", { delete: del }),
   exitApp: () => invoke<void>("exit_app"),
+  saveSimilarCache: () => invoke<void>("save_similar_cache"),
 };
 
 const isWindows = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const updater = vi.hoisted(() => ({ check: vi.fn() }));
 const dialog = vi.hoisted(() => ({ ask: vi.fn() }));
 const proc = vi.hoisted(() => ({ relaunch: vi.fn() }));
-const api = vi.hoisted(() => ({ pendingDeletions: vi.fn() }));
+const api = vi.hoisted(() => ({ pendingDeletions: vi.fn(), saveSimilarCache: vi.fn() }));
 const toast = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/plugin-updater", () => updater);
 vi.mock("@tauri-apps/plugin-dialog", () => dialog);
@@ -25,6 +25,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   document.body.innerHTML = "";
   api.pendingDeletions.mockResolvedValue({ items: [], trashDir: null, onExit: "confirm" });
+  api.saveSimilarCache.mockResolvedValue(undefined);
 });
 
 describe("checkForUpdates", () => {
@@ -54,6 +55,25 @@ describe("checkForUpdates", () => {
     await vi.waitFor(() => expect(proc.relaunch).toHaveBeenCalled());
     expect(u.downloadAndInstall).toHaveBeenCalled();
     expect(dialog.ask).not.toHaveBeenCalled();
+  });
+
+  it("再起動の前に類似判定の記録を保存する", async () => {
+    const order: string[] = [];
+    api.saveSimilarCache.mockImplementation(async () => void order.push("save"));
+    proc.relaunch.mockImplementation(async () => void order.push("relaunch"));
+    updater.check.mockResolvedValue(update());
+    await checkForUpdates();
+    press("install");
+    await vi.waitFor(() => expect(order).toEqual(["save", "relaunch"]));
+  });
+
+  it("類似判定の記録を保存できなくても再起動する", async () => {
+    api.saveSimilarCache.mockRejectedValue("保存できません");
+    updater.check.mockResolvedValue(update());
+    await checkForUpdates();
+    press("install");
+    await vi.waitFor(() => expect(proc.relaunch).toHaveBeenCalled());
+    expect(toast).not.toHaveBeenCalledWith(expect.stringContaining("更新できませんでした"), "error");
   });
 
   it("削除予定があれば再起動の前に確認する", async () => {

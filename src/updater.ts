@@ -49,6 +49,8 @@ async function install(update: Update): Promise<void> {
   try {
     toast("更新をダウンロードしています…", "info", 60000);
     await update.downloadAndInstall();
+    // 再起動は終了時の処理を通らないので、類似判定の記録をここで保存する（失敗しても更新は続ける）
+    await api.saveSimilarCache().catch(() => {});
     await relaunch();
   } catch (e) {
     toast(`更新できませんでした: ${errorText(e)}`, "error");
