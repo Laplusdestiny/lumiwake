@@ -7,6 +7,7 @@ pub mod group;
 pub mod hash;
 pub mod names;
 pub mod scan;
+pub mod store;
 
 /// 既定の閾値（ハッシュの違うビット数がこれ以下なら類似とみなす）
 pub const DEFAULT_MAX_DISTANCE: u32 = 6;
