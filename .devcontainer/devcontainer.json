@@ -1,0 +1,70 @@
+// Lumiwake の開発環境（GitHub Codespaces / VS Code Dev Containers / devcontainer CLI）
+// ウィンドウは仮想デスクトップに出る。ブラウザでポート 6080（noVNC。パスワードを聞かれたら vscode）を開いて見る
+{
+  "name": "Lumiwake",
+  "build": { "dockerfile": "Dockerfile" },
+
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest",
+      "profile": "minimal",
+      "components": "rustfmt,clippy,rust-src,llvm-tools-preview"
+    },
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Claude Code（CLI と VS Code 拡張）。初回は claude を起動してログインする
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    // npm run tauri dev のウィンドウを出すための仮想デスクトップ（Xvnc ＋ noVNC）
+    "ghcr.io/devcontainers/features/desktop-lite:1": {}
+  },
+
+  // ホスト側の node_modules / target（ホスト向けにビルドしたもの）と混ざらないよう、ボリュームに分ける
+  "mounts": [
+    "source=lumiwake-${devcontainerId}-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume",
+    "source=lumiwake-${devcontainerId}-site-node_modules,target=${containerWorkspaceFolder}/site/node_modules,type=volume",
+    "source=lumiwake-${devcontainerId}-target,target=${containerWorkspaceFolder}/src-tauri/target,type=volume",
+    // Claude Code のログイン情報と設定。コンテナを作り直しても残す
+    "source=lumiwake-${devcontainerId}-claude,target=/home/vscode/.claude,type=volume"
+  ],
+
+  "containerEnv": {
+    // ~/.claude.json も ~/.claude/ の中に置かせ、上のボリュームに収める
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    // GPU のないコンテナでは、WebKitGTK の DMA-BUF 描画でウィンドウが真っ白になる
+    "WEBKIT_DISABLE_DMABUF_RENDERER": "1"
+  },
+  // WebKitGTK が共有メモリを使うため、Docker 既定の 64MB では足りない
+  "runArgs": ["--shm-size=1g"],
+
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": { "label": "デスクトップ (noVNC)", "onAutoForward": "notify" },
+    "1420": { "label": "Vite（Tauri が読む）", "onAutoForward": "silent" },
+    "4321": { "label": "説明ページ (Astro)", "onAutoForward": "notify" }
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  // Codespaces のマシンの下限。Tauri（WebKitGTK）の Rust ビルドは重い
+  "hostRequirements": { "cpus": 4, "memory": "8gb", "storage": "32gb" },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tauri-apps.tauri-vscode",
+        "tamasfe.even-better-toml",
+        "vitest.explorer",
+        "astro-build.astro-vscode"
+      ],
+      "settings": {
+        // Cargo.toml はリポジトリ直下ではなく src-tauri/ にある
+        "rust-analyzer.linkedProjects": ["src-tauri/Cargo.toml"],
+        // HEIC / AVIF のライブラリはコンテナに入れてあるので、feature 付きのコードも解析する
+        "rust-analyzer.cargo.features": ["avif", "heic"]
+      }
+    }
+  },
+
+  "remoteUser": "vscode"
+}
