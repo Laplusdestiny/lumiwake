@@ -54,6 +54,14 @@ cd src-tauri && cargo test   # Rust のテスト
 
 Linux では `libwebkit2gtk-4.1-dev` などが必要です（[Tauri の前提条件](https://v2.tauri.app/start/prerequisites/)）。詳しいコマンドは [CLAUDE.md](./CLAUDE.md) を参照してください。
 
+### Dev Container / GitHub Codespaces
+
+`.devcontainer/` に、必要なライブラリ（HEIC / AVIF 用を含む）・Rust・Node・CI と同じテストツールをそろえた開発環境があります。GitHub Codespaces で開くか、VS Code の「Dev Containers: Reopen in Container」で起動すると、依存の取得（`npm ci`）まで自動で済みます。
+
+- `npm run tauri dev` のウィンドウはコンテナ内の仮想デスクトップに出ます。転送されたポート 6080 をブラウザで開き、noVNC に接続して見てください（パスワードを聞かれたら `vscode`）
+- Claude Code（CLI と VS Code 拡張）も入っています。初回はターミナルで `claude` を起動してログインしてください。ログイン情報はボリュームに保存されるので、コンテナを作り直しても残ります
+- テストでは、コンテナ内に作った一時ディレクトリのダミー画像を使ってください。ホストの写真フォルダはマウントしていません
+
 ## ドキュメント
 
 - [説明ページ（使い方・インストール）](https://laplusdestiny.github.io/lumiwake/)（[ソース](./site/)）
