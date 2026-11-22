@@ -42,6 +42,7 @@ describe("api", () => {
     ["pendingDeletions", [], "pending_deletions", undefined],
     ["finalizeAndExit", [true], "finalize_and_exit", { delete: true }],
     ["exitApp", [], "exit_app", undefined],
+    ["saveSimilarCache", [], "save_similar_cache", undefined],
   ] as const)("%s → %s", async (method, args, command, payload) => {
     await (api[method] as (...a: unknown[]) => Promise<unknown>)(...args);
     expect(invoke).toHaveBeenCalledTimes(1);

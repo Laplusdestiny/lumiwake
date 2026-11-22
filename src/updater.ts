@@ -48,6 +48,9 @@ async function install(update: Update): Promise<void> {
   }
   try {
     toast("更新をダウンロードしています…", "info", 60000);
+    // 更新後の再起動は終了時の処理を通らず、Windows では更新を入れた時点でアプリが終了するので、
+    // 類似判定の記録を先に保存する（失敗しても更新は続ける）
+    await api.saveSimilarCache().catch(() => {});
     await update.downloadAndInstall();
     await relaunch();
   } catch (e) {

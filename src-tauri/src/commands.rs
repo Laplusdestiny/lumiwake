@@ -366,6 +366,8 @@ pub fn start_session(
         excluded_targets,
     });
     if let Some(old) = old {
+        // 前のフォルダで移動した画像の類似判定の記録を、移動先でも使えるようにしてから手放す
+        state.carry_moves(crate::state::moved_images(std::iter::once(&old.session)));
         // 前のフォルダで削除予定にしたものは、終了時の確認まで引き継ぐ
         if !old.session.pending_deletions().is_empty() {
             state.retired().push(old.session);
@@ -574,8 +576,9 @@ pub fn start_similar_scan(state: State<'_, AppState>) -> CmdResult<ScanStatus> {
         (s.generation, jobs)
     };
     let workers = similar::scan_workers(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
-    let registry = state.registry.clone();
-    Ok(state.similar.start(generation, jobs, workers, Arc::new(move |p: &Path| similar::fingerprint(&registry, p))))
+    let (registry, prints) = (state.registry.clone(), state.prints.clone());
+    let load = Arc::new(move |p: &Path| similar::fingerprint_cached(&registry, &prints, p));
+    Ok(state.similar.start(generation, jobs, workers, load))
 }
 
 #[tauri::command]
@@ -777,8 +780,15 @@ fn finalize_all(state: &AppState) -> FinalizeReport {
     report
 }
 
+/// 類似判定の記録を書き出す（アップデート後の再起動の前に呼ぶ。再起動は `exit_app` を通らない）
+#[tauri::command]
+pub fn save_similar_cache(state: State<'_, AppState>) {
+    state.save_prints();
+}
+
 #[tauri::command]
 pub fn exit_app(app: AppHandle, state: State<'_, AppState>) {
+    state.save_prints();
     state.allow_exit.store(true, Ordering::SeqCst);
     app.exit(0);
 }
@@ -810,12 +820,28 @@ mod tests {
             }
             std::fs::write(src.join("memo.txt"), "画像ではない").unwrap();
             let app = mock_app();
-            app.manage(AppState::new(dir.path().join("conf").join("config.toml")));
+            app.manage(AppState::new(dir.path().join("conf").join("config.toml"), Self::cache_file(&dir)));
             let f = Fixture { dir, app };
             let mut config = f.config().config;
             config.targets = vec![f.target("1", "a"), f.target("2", "b")];
             save_config(f.state(), config).unwrap();
             f
+        }
+
+        fn cache_file(dir: &TempDir) -> PathBuf {
+            dir.path().join("cache").join("similar-cache.json")
+        }
+
+        /// アプリを終了して、また起動したことにする（同じ設定ファイル・同じ保存先）
+        fn relaunch(&mut self) {
+            let cache = Self::cache_file(&self.dir);
+            self.relaunch_with(cache);
+        }
+
+        fn relaunch_with(&mut self, cache: PathBuf) {
+            let app = mock_app();
+            app.manage(AppState::new(self.dir.path().join("conf").join("config.toml"), cache));
+            self.app = app;
         }
 
         fn state(&self) -> State<'_, AppState> {
@@ -1121,7 +1147,7 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "targets = 1\n").unwrap();
         let app = mock_app();
-        app.manage(AppState::new(path));
+        app.manage(AppState::new(path, dir.path().join("similar-cache.json")));
         let payload = get_config(app.state::<AppState>());
         assert!(payload.load_error.is_some());
         assert!(payload.config.targets.is_empty());
@@ -1273,6 +1299,128 @@ mod tests {
         fn scanned(&self, rel: &str) -> PathBuf {
             dunce::canonicalize(self.path(rel)).unwrap()
         }
+    }
+
+    /// 判定の終わりに書き出す保存ファイルができるまで待つ（書き出しはワーカーが抜けるときに行う）
+    fn wait_for_file(path: &Path) {
+        let start = Instant::now();
+        while !path.exists() {
+            assert!(start.elapsed() < Duration::from_secs(5), "保存ファイルができない");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn scan_results_are_saved_and_reused_after_the_app_restarts() {
+        let mut f = Fixture::new();
+        f.start();
+        assert_eq!(f.scan().failed, 0);
+        wait_for_file(&Fixture::cache_file(&f.dir));
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("src/1.png"));
+        f.relaunch();
+        f.start();
+        let st = f.scan();
+        assert_eq!((st.done, st.total, st.failed), (3, 3, 0), "壊した 1.png もデコードせずに記録を使う");
+    }
+
+    /// `rel` を仕分け元として読み込む
+    fn start_at(f: &Fixture, rel: &str) -> SessionView {
+        start_session(f.state(), lossy(&f.path(rel)), false, false).unwrap()
+    }
+
+    #[test]
+    fn moved_images_keep_their_records_at_the_destination() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 }); // 1.png → a/1.png
+        save_similar_cache(f.state());
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        let st = f.scan();
+        assert_eq!((st.done, st.total, st.failed), (1, 1, 0), "移動先でもデコードせずに記録を使う");
+    }
+
+    #[test]
+    fn undoing_a_move_still_uses_the_original_record() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 });
+        save_similar_cache(f.state());
+        undo(f.state()).unwrap();
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("src/1.png"));
+        f.relaunch();
+        f.start();
+        assert_eq!(f.scan().failed, 0, "元の場所の記録は消えていない");
+    }
+
+    #[test]
+    fn records_are_carried_over_for_images_moved_before_switching_folders() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 }); // 1.png → a/1.png
+        f.act(ActionArg::Delete); // 削除予定があるので、切り替えたあとも前のセッションが残る
+        start_at(&f, "b");
+        save_similar_cache(f.state());
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0);
+    }
+
+    #[test]
+    fn records_follow_moves_even_when_the_previous_folder_is_dropped() {
+        // 振り分けだけ（削除予定なし）で別のフォルダへ切り替えると、前のセッションは残らない
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 }); // 1.png → a/1.png
+        start_at(&f, "b");
+        assert!(f.state().retired().is_empty());
+        f.state().save_prints();
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0, "移動先でも記録を使う");
+    }
+
+    #[test]
+    fn records_follow_moves_within_the_same_run() {
+        // 振り分けたあと、終了せずにそのまま振り分け先を読み込む
+        let f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 });
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0, "同じ起動の中でも移動先で記録を使う");
+    }
+
+    #[test]
+    fn exit_saves_records_of_moved_images() {
+        let mut f = Fixture::new();
+        f.start();
+        f.scan();
+        f.act(ActionArg::Move { target: 0 });
+        f.state().save_prints();
+        crate::similar::tests::corrupt_keeping_stamp(&f.path("a/1.png"));
+        f.relaunch();
+        start_at(&f, "a");
+        assert_eq!(f.scan().failed, 0);
+    }
+
+    #[test]
+    fn scan_finishes_even_when_the_cache_cannot_be_written() {
+        let mut f = Fixture::new();
+        let blocker = f.path("blocker");
+        std::fs::write(&blocker, "").unwrap();
+        f.relaunch_with(blocker.join("similar-cache.json"));
+        f.start();
+        let st = f.scan();
+        assert_eq!((st.done, st.total, st.failed, st.running), (3, 3, 0, false));
     }
 
     #[test]

@@ -2,11 +2,13 @@
 
 use crate::decoder::Registry;
 use std::path::Path;
+use store::PrintStore;
 
 pub mod group;
 pub mod hash;
 pub mod names;
 pub mod scan;
+pub mod store;
 
 /// 既定の閾値（ハッシュの違うビット数がこれ以下なら類似とみなす）
 pub const DEFAULT_MAX_DISTANCE: u32 = 6;
@@ -35,10 +37,102 @@ pub fn fingerprint(registry: &Registry, path: &Path) -> Result<group::Fingerprin
     Ok(group::Fingerprint { hash: hash::dhash(&img), width: img.width(), height: img.height(), size })
 }
 
+/// 保存した記録があれば、デコードせずにそれを返す。なければデコードして記録する。
+/// 更新日時を取れない画像は記録を使わず、保存もしない
+pub fn fingerprint_cached(registry: &Registry, prints: &PrintStore, path: &Path) -> Result<group::Fingerprint, String> {
+    let stamp = store::stamp(path).map_err(|e| e.to_string())?;
+    let now = store::now_secs();
+    if let Some(print) = stamp.and_then(|s| prints.lookup(path, s, now)) {
+        return Ok(print);
+    }
+    let print = fingerprint(registry, path)?;
+    if let Some(stamp) = stamp {
+        prints.insert(path, stamp, print, now);
+        if prints.unsaved() >= store::FLUSH_EVERY {
+            if let Err(e) = prints.save(now) {
+                eprintln!("類似判定の記録を保存できませんでした: {e}");
+            }
+        }
+    }
+    Ok(print)
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::decoder::tests::write_dummy;
+    use crate::similar::store::{self, PrintStore, FLUSH_EVERY};
+
+    /// 中身だけを壊す（サイズと更新日時は元のまま）。これを読めれば、デコードせずに記録を使ったことになる
+    pub(crate) fn corrupt_keeping_stamp(p: &Path) {
+        let meta = std::fs::metadata(p).unwrap();
+        let modified = meta.modified().unwrap();
+        std::fs::write(p, vec![0u8; meta.len() as usize]).unwrap();
+        std::fs::File::options().write(true).open(p).unwrap().set_modified(modified).unwrap();
+    }
+
+    fn set_modified_later(p: &Path) {
+        let later = std::fs::metadata(p).unwrap().modified().unwrap() + std::time::Duration::from_secs(60);
+        std::fs::File::options().write(true).open(p).unwrap().set_modified(later).unwrap();
+    }
+
+    #[test]
+    fn cached_fingerprint_skips_decoding_unchanged_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.png");
+        write_dummy(&p, 8, 6);
+        let registry = Registry::builtin();
+        let prints = PrintStore::new(dir.path().join("cache.json"));
+        let first = fingerprint_cached(&registry, &prints, &p).unwrap();
+        assert_eq!(first, fingerprint(&registry, &p).unwrap());
+        corrupt_keeping_stamp(&p);
+        assert!(fingerprint(&registry, &p).is_err(), "中身はもう画像ではない");
+        assert_eq!(fingerprint_cached(&registry, &prints, &p).unwrap(), first, "記録を使う");
+    }
+
+    #[test]
+    fn cached_fingerprint_rereads_files_that_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.png");
+        write_dummy(&p, 8, 6);
+        let registry = Registry::builtin();
+        let prints = PrintStore::new(dir.path().join("cache.json"));
+        fingerprint_cached(&registry, &prints, &p).unwrap();
+        // 同じサイズのまま更新日時だけ変わった（編集された）: 読み直すので、壊れた中身は読めない
+        corrupt_keeping_stamp(&p);
+        set_modified_later(&p);
+        assert!(fingerprint_cached(&registry, &prints, &p).is_err());
+        // 別の画像に差し替えた: 新しい結果を返し、記録も置き換える
+        write_dummy(&p, 16, 12);
+        set_modified_later(&p);
+        let replaced = fingerprint_cached(&registry, &prints, &p).unwrap();
+        assert_eq!((replaced.width, replaced.height), (16, 12));
+        let now = store::stamp(&p).unwrap().unwrap();
+        assert_eq!(prints.lookup(&p, now, store::now_secs()), Some(replaced));
+    }
+
+    #[test]
+    fn cached_fingerprint_reports_missing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let prints = PrintStore::new(dir.path().join("cache.json"));
+        assert!(fingerprint_cached(&Registry::builtin(), &prints, &dir.path().join("missing.png")).is_err());
+        assert_eq!(prints.unsaved(), 0);
+    }
+
+    #[test]
+    fn cached_fingerprint_saves_every_200_new_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("cache").join("similar-cache.json");
+        let prints = PrintStore::new(file.clone());
+        let registry = Registry::builtin();
+        for i in 0..FLUSH_EVERY {
+            let p = dir.path().join(format!("{i}.png"));
+            write_dummy(&p, 2, 2);
+            fingerprint_cached(&registry, &prints, &p).unwrap();
+            assert_eq!(file.exists(), i + 1 == FLUSH_EVERY, "{i} 枚目");
+        }
+        assert_eq!(prints.unsaved(), 0);
+    }
 
     #[test]
     fn fingerprint_reads_hash_resolution_and_size() {

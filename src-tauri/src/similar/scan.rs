@@ -64,14 +64,23 @@ impl Inner {
     }
 }
 
+/// 走査が終わったとき（待ちがなくなり、読んでいる画像もなくなったとき）に呼ぶ処理
+pub type IdleFn = Arc<dyn Fn() + Send + Sync>;
+
 #[derive(Default)]
 pub struct SimilarScan {
     inner: Mutex<Inner>,
+    on_idle: Option<IdleFn>,
 }
 
 impl SimilarScan {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 走査が終わるたびに `on_idle` を呼ぶ（判定結果の書き出しに使う）
+    pub fn with_on_idle(on_idle: IdleFn) -> Self {
+        SimilarScan { on_idle: Some(on_idle), ..Self::default() }
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -132,6 +141,14 @@ impl SimilarScan {
                 let next = s.queue.pop_front().zip(s.load.clone());
                 let Some((job, load)) = next else {
                     s.workers -= 1;
+                    // 最後のワーカーが抜けるときだけ、ロックを外してから呼ぶ
+                    let idle = s.workers == 0;
+                    drop(s);
+                    if idle {
+                        if let Some(on_idle) = &self.on_idle {
+                            on_idle();
+                        }
+                    }
                     return;
                 };
                 s.in_flight += 1;
@@ -229,6 +246,30 @@ pub(crate) mod tests {
         assert_eq!(scan.get(Path::new("ccc")), Some(print(3)));
         assert_eq!(scan.get(Path::new("zzz")), None);
         assert_eq!(calls.load(SeqCst), 5);
+    }
+
+    #[test]
+    fn on_idle_runs_once_when_the_scan_finishes() {
+        let idle = Arc::new(AtomicUsize::new(0));
+        let counter = idle.clone();
+        let scan = Arc::new(SimilarScan::with_on_idle(Arc::new(move || {
+            counter.fetch_add(1, SeqCst);
+        })));
+        scan.reset(1);
+        let calls = Arc::new(AtomicUsize::new(0));
+        scan.start(1, jobs(&FIVE), 3, counting(&calls));
+        wait(&scan);
+        let start = Instant::now();
+        while idle.load(SeqCst) == 0 {
+            assert!(start.elapsed() < Duration::from_secs(5), "終わっても呼ばれない");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(idle.load(SeqCst), 1, "ワーカーが 3 本でも 1 回だけ");
+        // すべて判定済みで読む画像がなければ、ワーカーは起きず呼ばれない
+        scan.start(1, jobs(&FIVE), 3, counting(&calls));
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(idle.load(SeqCst), 1);
     }
 
     #[test]
